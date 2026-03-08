@@ -24,7 +24,7 @@ import ViewControls from "../components/ViewControls";
 import CanvasControls from "../components/CanvasControls";
 import SkinSelectionViewer from "../components/SkinSelectionViewer";
 
-const MIN_SIDEBAR_W = 420;
+const MIN_SIDEBAR_W = 290;
 const MAX_SIDEBAR_W = 720;
 const DEFAULT_SIDEBAR_W = 520;
 const safeTop = "calc(env(safe-area-inset-top, 0px) + 12px)";
@@ -347,10 +347,16 @@ function SidebarContent({
       </Paper>
 
       <Paper variant="outlined" sx={{ m: 2, p: 2, borderRadius: 3 }}>
-        <Typography>
-          Display
-        </Typography>
-        <Stack direction="row" spacing={0.5}>
+        <Stack
+          direction="row"
+          spacing={1.5}
+          alignItems="center"
+          flexWrap="wrap"
+        >
+          <Typography sx={{ fontWeight: 700 }}>
+            Display:
+          </Typography>
+
           <FormControlLabel
             control={
               <Checkbox
@@ -359,7 +365,9 @@ function SidebarContent({
               />
             }
             label="#Cases"
+            sx={{ m: 0 }}
           />
+
           <FormControlLabel
             control={
               <Checkbox
@@ -368,7 +376,9 @@ function SidebarContent({
               />
             }
             label="Codes"
+            sx={{ m: 0 }}
           />
+
           <FormControlLabel
             control={
               <Checkbox
@@ -377,6 +387,7 @@ function SidebarContent({
               />
             }
             label="Drainage %"
+            sx={{ m: 0 }}
           />
         </Stack>
       </Paper>
