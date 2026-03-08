@@ -2,28 +2,28 @@ import { Box, Typography, Grid, Link, Avatar, Stack } from "@mui/material";
 
 const teamMembers = [
   {
-    name: "Hayley Reynolds PhD.",
+    name: "Hayley Reynolds, PhD",
     title: "Senior Research Fellow",
     organisation: "Auckland Bioengineering Institute",
     profileUrl: "https://profiles.auckland.ac.nz/hayley-reynolds",
     imageUrl: `${import.meta.env.BASE_URL}images/hayley.png`,
   },
   {
-    name: "Tharanga Don PhD.",
+    name: "Tharanga Don, PhD",
     title: "Research Fellow",
     organisation: "Auckland Bioengineering Institute",
     profileUrl: "https://profiles.auckland.ac.nz/t-jayathungage-don",
     imageUrl: `${import.meta.env.BASE_URL}images/tharanga.png`,
   },
   {
-    name: "David Chung MD",
+    name: "David Chung, MD",
     title: "Nuclear Medicine Physician",
     organisation: "Alfred Nuclear Medicine and Ultrasound (ANMU) and University of Sydney",
     profileUrl: "",
     imageUrl: `${import.meta.env.BASE_URL}images/david.jpg`,
   },
   {
-    name: "Roger Uren MD",
+    name: "Roger Uren, MD",
     title: "Nuclear Medicine Physician",
     organisation: "University of Sydney",
     profileUrl: "https://linkedin.com/in/roger-uren-77199289",
@@ -77,7 +77,7 @@ export default function Team() {
                 rel="noopener noreferrer"
                 underline="none"
                 sx={{
-                  width: 240,
+                  width: 340,
                   maxWidth: "100%",
                   display: "block",
                   borderRadius: 3,
@@ -96,7 +96,7 @@ export default function Team() {
                   className="teamCard"
                   sx={{
                     height: "100%",
-                    minHeight: 230, 
+                    minHeight: 330, 
                     border: "1px solid",
                     borderColor: "divider",
                     borderRadius: 3,
@@ -113,7 +113,7 @@ export default function Team() {
                   <Avatar
                     alt={m.name}
                     src={m.imageUrl || undefined}
-                    sx={{ width: 96, height: 96, fontWeight: 800 }}
+                    sx={{ width: 196, height: 196, fontWeight: 800 }}
                   >
                     {getInitials(m.name)}
                   </Avatar>
@@ -155,6 +155,6 @@ export default function Team() {
 function getInitials(fullName) {
   const parts = fullName.trim().split(/\s+/).filter(Boolean);
   const first = parts[0]?.[0] ?? "";
-  const last = parts.length > 1 ? parts[parts.length - 1][0] : "";
+  const last = parts.length > 1 ? parts[parts.length - 2][0] : "";
   return (first + last).toUpperCase();
 }
