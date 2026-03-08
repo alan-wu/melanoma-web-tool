@@ -9,28 +9,6 @@ import Tool1 from "./pages/Tool1.jsx";
 import Tool2 from "./pages/Tool2.jsx";
 import Team from "./pages/Team.jsx";
 
-function CenteredPage({ children }) {
-  return (
-    <Container maxWidth="lg">
-      <Box sx={{ py: { xs: 3, sm: 4 } }}>{children}</Box>
-    </Container>
-  );
-}
-
-function FullBleedPage({ children }) {
-  return (
-    <Box
-      sx={{
-        height: "100%",          
-        width: "100%",
-        overflow: "hidden",
-        position: "relative",    // important for absolute canvases
-      }}
-    >
-      {children}
-    </Box>
-  );
-}
 
 export default function App() {
   return (
@@ -39,10 +17,10 @@ export default function App() {
 
       <Box component="main" sx={{ flex: 1, minHeight: 0, width: "100%" }}>
         <Routes>
-          <Route path="/" element={ <FullBleedPage> <Home /> </FullBleedPage>}/>
-          <Route path="/tool1" element={ <FullBleedPage> <Tool1 /> </FullBleedPage> } />
-          <Route path="/tool2" element={<FullBleedPage> <Tool2 /> </FullBleedPage>} />
-          <Route path="/team"  element={ <CenteredPage> <Team /> </CenteredPage> } />
+          <Route path="/" element={<Home />} />
+          <Route path="/tool1" element={<Tool1 />} />
+          <Route path="/tool2" element={<Tool2 />} />
+          <Route path="/team" element={<Team />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
         <FloatingLogo src={`${import.meta.env.BASE_URL}images/abilogo.png`}/>
