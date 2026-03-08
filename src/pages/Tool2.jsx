@@ -32,7 +32,7 @@ const safeTop = "calc(env(safe-area-inset-top, 0px) + 12px)";
 const safeBottom = "calc(env(safe-area-inset-bottom, 0px) + 12px)";
 
 // Sidebar resize bounds (desktop)
-const MIN_SIDEBAR_W = 420;
+const MIN_SIDEBAR_W = 290;
 const MAX_SIDEBAR_W = 720;
 const DEFAULT_SIDEBAR_W = 520;
 
@@ -136,6 +136,77 @@ export default function Tool2() {
     window.addEventListener("pointerup", onUp);
   };
 
+  const sections = useMemo(
+    () => [
+      {
+        title: "Head and Neck",
+        rows: [
+          { type: "lr", label: "Occipital", left: "Left Occipital", right: "Right Occipital" },
+          { type: "lr", label: "Preauricular", left: "Left Preauricular", right: "Right Preauricular" },
+          { type: "lr", label: "Postauricular", left: "Left Postauricular", right: "Right Postauricular" },
+          { type: "lr", label: "Cervical Level I", left: "Left Cervical Level I", right: "Right Cervical Level I" },
+          { type: "lr", label: "Cervical Level II", left: "Left Cervical Level II", right: "Right Cervical Level II" },
+          { type: "lr", label: "Cervical Level III", left: "Left Cervical Level III", right: "Right Cervical Level III" },
+          { type: "lr", label: "Cervical Level IV", left: "Left Cervical Level IV", right: "Right Cervical Level IV" },
+          { type: "lr", label: "Cervical Level V", left: "Left Cervical Level V", right: "Right Cervical Level V" },
+          { type: "lr", label: "Submental", left: "Left Submental", right: "Right Submental" },
+          { type: "single", label: "Anterior Node Fields", valueKey: "Anterior Head" },
+          { type: "single", label: "Posterior Node Fields", valueKey: "Posterior Head" },
+        ],
+      },
+      {
+        title: "Torso and Upper Limb",
+        rows: [
+          { type: "lr", label: "Axilla Levels I, II, III", left: "Left Axilla", right: "Right Axilla" },
+          { type: "lr", label: "Axilla Level I Anterior", left: "Left Axilla/Sub-Node Fields Laa", right: "Right Axilla/Sub-Node Fields Raa" },
+          { type: "lr", label: "Axilla Level I Mid", left: "Left Axilla/Sub-Node Fields Lam", right: "Right Axilla/Sub-Node Fields Ram" },
+          { type: "lr", label: "Axilla Level I Posterior", left: "Left Axilla/Sub-Node Fields Lap", right: "Right Axilla/Sub-Node Fields Rap" },
+          { type: "lr", label: "Axilla Level I Lateral", left: "Left Axilla/Sub-Node Fields Lal", right: "Right Axilla/Sub-Node Fields Ral" },
+          { type: "lr", label: "Triangular Intermuscular Space", left: "Left Triangular Intermuscular Space", right: "Right Triangular Intermuscular Space" },
+          { type: "lr", label: "Supraclavicular Fossa", left: "Left Supraclavicular Fossa", right: "Right Supraclavicular Fossa" },
+          { type: "lr", label: "Epitrochlear", left: "Left Epitrochlear", right: "Right Epitrochlear" },
+        ],
+      },
+      {
+        title: "Lower Limb",
+        rows: [
+          { type: "lr", label: "Groin (External Iliac, Femoral, Inguinal)", left: "Left Groin", right: "Right Groin" },
+          { type: "lr", label: "External Iliac", left: "Left Groin/Sub-Node Fields Liei", right: "Right Groin/Sub-Node Fields Riei" },
+          { type: "lr", label: "Femoral", left: "Left Groin/Sub-Node Fields Lif", right: "Right Groin/Sub-Node Fields Rif" },
+          { type: "lr", label: "Inguinal", left: "Left Groin/Sub-Node Fields Lii", right: "Right Groin/Sub-Node Fields Rii" },
+          { type: "lr", label: "Popliteal", left: "Left Popliteal", right: "Right Popliteal" },
+        ],
+      },
+    ],
+    []
+  );
+
+
+  const getDisplayRegionLabel = (value) => {
+    for (const sec of sections) {
+      for (const row of sec.rows) {
+        if (row.type === "single" && row.valueKey === value) {
+          return row.label;
+        }
+
+        if (row.type === "lr") {
+          if (row.left === value) return `Left ${row.label}`;
+          if (row.right === value) return `Right ${row.label}`;
+        }
+      }
+    }
+
+    if (value === "1 Draining Node Fields") return "1 Draining Node Field";
+    if (value === "2 Or More Draining Node Fields") return "2+ Draining Node Fields";
+    if (value === "3 Or More Draining Node Fields") return "3+ Draining Node Fields";
+    if (value === "4 Or More Draining Node Fields") return "4+ Draining Node Fields";
+
+    return value;
+  };
+
+  const selectedRegionLabel = getDisplayRegionLabel(region);
+
+
   return (
     <Box
       sx={{
@@ -181,6 +252,7 @@ export default function Tool2() {
           />
 
           <SidebarContent
+            sections={sections}
             controlsText={controlsText}
             region={region}
             setRegion={setRegion}
@@ -190,6 +262,7 @@ export default function Tool2() {
             setPatientDataMode={setPatientDataMode}
             hasNorm={hasNorm}
             hasFreq={hasFreq}
+            isMdUp={isMdUp}
           />
         </Box>
       )}
@@ -224,7 +297,9 @@ export default function Tool2() {
           onReset={handleReset}
         />
         <ViewControls value={viewPreset} onChange={setViewPreset} />
-         <HeatmapLegend compact={!isMdUp} />
+        {/* Overlay legend and selected region text on desktop, move legend to bottom on mobile */}
+        {isMdUp && <HeatmapLegend overlay compact={false} />}
+        <SelectedRegionOverlayText regionLabel={selectedRegionLabel} patientDataMode={patientDataMode} />
 
         {/* Mobile drawer button */}
         {!isMdUp && (
@@ -284,6 +359,7 @@ export default function Tool2() {
 
                 <Box sx={{ flex: 1, minHeight: 0, overflow: "auto" }}>
                   <SidebarContent
+                    sections={sections}
                     controlsText={controlsText}
                     region={region}
                     setRegion={setRegion}
@@ -293,6 +369,7 @@ export default function Tool2() {
                     setPatientDataMode={setPatientDataMode}
                     hasNorm={hasNorm}
                     hasFreq={hasFreq}
+                    isMdUp={isMdUp}
                   />
                 </Box>
               </Box>
@@ -305,6 +382,7 @@ export default function Tool2() {
 }
 
 function SidebarContent({
+  sections,
   controlsText,
   region,
   setRegion,
@@ -314,6 +392,7 @@ function SidebarContent({
   setPatientDataMode,
   hasNorm,
   hasFreq,
+  isMdUp,
 }) {
   const SECTION_ROW_SX = { fontWeight: 800 };
 
@@ -325,51 +404,6 @@ function SidebarContent({
   });
 
   const toggle = (key) => setOpenSections((prev) => ({ ...prev, [key]: !prev[key] }));
-
-  const sections = useMemo(
-    () => [
-      {
-        title: "Head and Neck",
-        rows: [
-          { type: "lr", label: "Occipital", left: "Left Occipital", right: "Right Occipital" },
-          { type: "lr", label: "Preauricular", left: "Left Preauricular", right: "Right Preauricular" },
-          { type: "lr", label: "Postauricular", left: "Left Postauricular", right: "Right Postauricular" },
-          { type: "lr", label: "Cervical Level I", left: "Left Cervical Level I", right: "Right Cervical Level I" },
-          { type: "lr", label: "Cervical Level II", left: "Left Cervical Level II", right: "Right Cervical Level II" },
-          { type: "lr", label: "Cervical Level III", left: "Left Cervical Level III", right: "Right Cervical Level III" },
-          { type: "lr", label: "Cervical Level IV", left: "Left Cervical Level IV", right: "Right Cervical Level IV" },
-          { type: "lr", label: "Cervical Level V", left: "Left Cervical Level V", right: "Right Cervical Level V" },
-          { type: "lr", label: "Submental", left: "Left Submental", right: "Right Submental" },
-          { type: "single", label: "Anterior Node Fields", valueKey: "Anterior Head" },
-          { type: "single", label: "Posterior Node Fields", valueKey: "Posterior Head" },
-        ],
-      },
-      {
-        title: "Torso and Upper Limb",
-        rows: [
-          { type: "lr", label: "Axilla Combined Levels I, II, III", left: "Left Axilla", right: "Right Axilla" },
-          { type: "lr", label: "Axilla Level I Anterior", left: "Left Axilla/Sub-Node Fields Laa", right: "Right Axilla/Sub-Node Fields Raa" },
-          { type: "lr", label: "Axilla Level I Mid", left: "Left Axilla/Sub-Node Fields Lam", right: "Right Axilla/Sub-Node Fields Ram" },
-          { type: "lr", label: "Axilla Level I Posterior", left: "Left Axilla/Sub-Node Fields Lap", right: "Right Axilla/Sub-Node Fields Rap" },
-          { type: "lr", label: "Axilla Level I Lateral", left: "Left Axilla/Sub-Node Fields Lal", right: "Right Axilla/Sub-Node Fields Ral" },
-          { type: "lr", label: "Triangular Intermuscular Space", left: "Left Triangular Intermuscular Space", right: "Right Triangular Intermuscular Space" },
-          { type: "lr", label: "Supraclavicular Fossa", left: "Left Supraclavicular Fossa", right: "Right Supraclavicular Fossa" },
-          { type: "lr", label: "Epitrochlear", left: "Left Epitrochlear", right: "Right Epitrochlear" },
-        ],
-      },
-      {
-        title: "Lower Limb",
-        rows: [
-          { type: "lr", label: "Combined", left: "Left Groin", right: "Right Groin" },
-          { type: "lr", label: "External Iliac", left: "Left Groin/Sub-Node Fields Liei", right: "Right Groin/Sub-Node Fields Riei" },
-          { type: "lr", label: "Femoral", left: "Left Groin/Sub-Node Fields Lif", right: "Right Groin/Sub-Node Fields Rif" },
-          { type: "lr", label: "Inguinal", left: "Left Groin/Sub-Node Fields Lii", right: "Right Groin/Sub-Node Fields Rii" },
-          { type: "lr", label: "Popliteal", left: "Left Popliteal", right: "Right Popliteal" },
-        ],
-      },
-    ],
-    []
-  );
 
   const sectionHasSelected = (sec) =>
     sec.rows.some((r) => (r.type === "single" ? r.valueKey === region : r.left === region || r.right === region));
@@ -535,7 +569,6 @@ function SidebarContent({
         </Table>
       </Paper>
 
-
       {/* Display sites and patient data mode*/}
       <Paper variant="outlined" sx={{ m: 2, p: 2, borderRadius: 3 }}>
         <Table size="small">
@@ -574,6 +607,12 @@ function SidebarContent({
           </TableBody>
         </Table>
       </Paper>
+
+      {!isMdUp && (
+        <Paper variant="outlined" sx={{ m: 2, p: 2, borderRadius: 3 }}>
+          <HeatmapLegend compact />
+        </Paper>
+      )}
     </>
   );
 }
@@ -614,20 +653,36 @@ function HeatmapSingleRow({ label, valueKey, value, onChange }) {
   );
 }
 
-function HeatmapLegend({ compact = false }) {
+function HeatmapLegend({ compact = false, overlay = false }) {
   return (
     <Paper
-      variant="outlined"
+      variant={overlay ? "outlined" : "elevation"}
+      elevation={0}
       sx={{
-        position: "absolute",
-        left: 12,
-        bottom: 12,
-        zIndex: 25,
-        p: compact ? 1 : 1.25,
-        borderRadius: 2.5,
-        bgcolor: "background.paper",
-        pointerEvents: "none", // important: don't block 3D controls
-        width: compact ? 180 : 260,
+        ...(overlay
+          ? {
+            position: "absolute",
+            left: 12,
+            bottom: 12,
+            zIndex: 25,
+            pointerEvents: "none", // don't block 3D controls
+            p: compact ? 1 : 1.25,
+            borderRadius: 2.5,
+            bgcolor: "background.paper",
+            width: compact ? 180 : 260,
+          }
+          : {
+            // don't look like a floating card
+            position: "static",
+            pointerEvents: "auto",
+            width: "100%",
+            maxWidth: "100%",
+            bgcolor: "transparent",
+            border: "none",
+            boxShadow: "none",
+            p: 0,
+            borderRadius: 0,
+          }),
       }}
     >
       <Box sx={{ display: "flex", alignItems: "center", mb: 0.5 }}>
@@ -664,5 +719,30 @@ function HeatmapLegend({ compact = false }) {
         />
       </Box>
     </Paper>
+  );
+}
+
+function SelectedRegionOverlayText({ regionLabel, patientDataMode }) {
+  const modeLabel = patientDataMode === "freq" ? "Frequency" : "Normalised";
+
+  return (
+    <Typography
+      variant="body2"
+      sx={{
+        position: "absolute",
+        left: "50%",
+        bottom: 12,
+        transform: "translateX(-50%)",
+        zIndex: 26,
+        fontWeight: 700,
+        pointerEvents: "none",
+        maxWidth: "calc(100% - 24px)",
+        whiteSpace: "nowrap",
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+      }}
+    >
+      Region: {regionLabel} | {modeLabel}
+    </Typography>
   );
 }
