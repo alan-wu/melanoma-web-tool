@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import {
   Box,
   Paper,
@@ -6,7 +6,6 @@ import {
   Divider,
   Radio,
   SwipeableDrawer,
-  useMediaQuery,
   Fab,
   TableContainer,
   Table,
@@ -15,125 +14,66 @@ import {
   TableRow,
   TableCell,
   IconButton,
-  Switch,
+  Checkbox,
+  Stack,
+  FormControlLabel,
 } from "@mui/material";
-
 import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
 import KeyboardArrowUpIcon from "@mui/icons-material/KeyboardArrowUp";
 import TableChartOutlinedIcon from "@mui/icons-material/TableChartOutlined";
-
-import { useTheme } from "@mui/material/styles";
-
-import ViewControls from "../components/ViewControls";
-import CanvasControls from "../components/CanvasControls";
-import HeatmapsViewer from "../components/HeatmapsViewer";
+import { useOutletContext } from "react-router-dom";
 
 const safeTop = "calc(env(safe-area-inset-top, 0px) + 12px)";
-const safeBottom = "calc(env(safe-area-inset-bottom, 0px) + 12px)";
-
-// Sidebar resize bounds (desktop)
-const MIN_SIDEBAR_W = 290;
-const MAX_SIDEBAR_W = 720;
-const DEFAULT_SIDEBAR_W = 520;
 
 export default function Tool2() {
-  const theme = useTheme();
-  const isMdUp = useMediaQuery(theme.breakpoints.up("md"));
+  const { isMdUp, heatmapState, setHeatmapState } = useOutletContext();
 
-  // Viewer API
-  const apiRef = useRef(null);
-
-  // Mobile drawer
   const [sidebarOpen, setSidebarOpen] = useState(false);
-
-  // Desktop sidebar width (draggable)
-  const [sidebarW, setSidebarW] = useState(() => {
-    if (typeof window === "undefined") return DEFAULT_SIDEBAR_W;
-    const saved = Number(window.localStorage.getItem("tool2_sidebarW"));
-    return Number.isFinite(saved) && saved > 0 ? saved : DEFAULT_SIDEBAR_W;
-  });
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    window.localStorage.setItem("tool2_sidebarW", String(sidebarW));
-  }, [sidebarW]);
-
-  // View preset
-  const [viewPreset, setViewPreset] = useState("All");
-
-  // Meta from engine (regions + discrete point keys)
-  const [regions, setRegions] = useState([]);
-  const [patientDataKeys, setPatientDataKeys] = useState([]);
-  const [defaultRegion, setDefaultRegion] = useState("Right Axilla");
-
-  // Heatmap selection state
-  const [region, setRegion] = useState("Right Axilla");
-  const [patientDataMode, setPatientDataMode] = useState("norm"); // "norm" | "freq"
-  const [displaySites, setDisplaySites] = useState(true);
 
   const controlsText =
     "Controls: left mouse button to rotate, right mouse button to pan. Mouse wheel to zoom. Double click to focus. Control panel located on top left.";
 
-  // view options
-  const hasNorm = patientDataKeys.includes(region);
-  const hasFreq = patientDataKeys.includes(`${region} Frequency`);
+  const {
+    region,
+    pointDisplayMode,
+    regions,
+    defaultRegion,
+  } = heatmapState;
 
-  // Autocorrect mode if user selects one that does not exist for this region
-  useEffect(() => {
-    if (patientDataMode === "freq" && !hasFreq && hasNorm) setPatientDataMode("norm");
-    if (patientDataMode === "norm" && !hasNorm && hasFreq) setPatientDataMode("freq");
-  }, [hasFreq, hasNorm, patientDataMode]);
-
-  // If the currently selected region is not in the loaded regions list, fall back
   useEffect(() => {
     if (regions.length === 0) return;
-    if (!regions.includes(region)) setRegion(defaultRegion || regions[0]);
-  }, [regions, defaultRegion, region]);
 
-  const handleReset = () => {
-    setViewPreset("All");
-    setRegion(defaultRegion);
-    setPatientDataMode("norm");
-    setDisplaySites(true);
-    apiRef.current?.resetAll?.();
+    if (!regions.includes(region)) {
+      setHeatmapState((prev) => ({
+        ...prev,
+        region: defaultRegion || regions[0],
+      }));
+    }
+  }, [regions, defaultRegion, region, setHeatmapState]);
+
+  const setRegion = (value) => {
+    setHeatmapState((prev) => ({
+      ...prev,
+      region: value,
+    }));
   };
 
-  const selection = {
-    region,
-    patientDataMode,
-    displaySites,
+  const setPointDisplayMode = (value) => {
+    setHeatmapState((prev) => ({
+      ...prev,
+      pointDisplayMode: value,
+    }));
   };
 
-  // Desktop resize handler
-  const startResize = (e) => {
-    if (!isMdUp) return;
-    if (e.button !== 0) return;
+  const melanomaSitesChecked = pointDisplayMode === "sites";
+  const normalisedChecked = pointDisplayMode === "normalised";
 
-    e.preventDefault();
+  const handleToggleMelanomaSites = () => {
+    setPointDisplayMode(melanomaSitesChecked ? "none" : "sites");
+  };
 
-    const startX = e.clientX;
-    const startW = sidebarW;
-
-    document.body.style.cursor = "col-resize";
-    document.body.style.userSelect = "none";
-
-    const onMove = (ev) => {
-      const next = Math.min(
-        MAX_SIDEBAR_W,
-        Math.max(MIN_SIDEBAR_W, startW + (ev.clientX - startX))
-      );
-      setSidebarW(next);
-    };
-
-    const onUp = () => {
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-      document.body.style.cursor = "";
-      document.body.style.userSelect = "";
-    };
-
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
+  const handleToggleNormalised = () => {
+    setPointDisplayMode(normalisedChecked ? "none" : "normalised");
   };
 
   const sections = useMemo(
@@ -181,203 +121,95 @@ export default function Tool2() {
     []
   );
 
-
-  const getDisplayRegionLabel = (value) => {
-    for (const sec of sections) {
-      for (const row of sec.rows) {
-        if (row.type === "single" && row.valueKey === value) {
-          return row.label;
-        }
-
-        if (row.type === "lr") {
-          if (row.left === value) return `Left ${row.label}`;
-          if (row.right === value) return `Right ${row.label}`;
-        }
-      }
-    }
-
-    if (value === "1 Draining Node Fields") return "1 Draining Node Field";
-    if (value === "2 Or More Draining Node Fields") return "2+ Draining Node Fields";
-    if (value === "3 Or More Draining Node Fields") return "3+ Draining Node Fields";
-    if (value === "4 Or More Draining Node Fields") return "4+ Draining Node Fields";
-
-    return value;
-  };
-
-  const selectedRegionLabel = getDisplayRegionLabel(region);
-
+  if (isMdUp) {
+    return (
+      <Box sx={{ height: "100%", minHeight: 0, display: "flex", flexDirection: "column" }}>
+        <SidebarContent
+          sections={sections}
+          controlsText={controlsText}
+          region={region}
+          setRegion={setRegion}
+          melanomaSitesChecked={melanomaSitesChecked}
+          normalisedChecked={normalisedChecked}
+          handleToggleMelanomaSites={handleToggleMelanomaSites}
+          handleToggleNormalised={handleToggleNormalised}
+          isMdUp={isMdUp}
+        />
+      </Box>
+    );
+  }
 
   return (
-    <Box
-      sx={{
-        position: "relative",
-        height: { xs: "calc(100dvh - 56px)", sm: "calc(100dvh - 64px)" },
-        width: "100%",
-        display: { xs: "block", md: "grid" },
-        gridTemplateColumns: { md: `${sidebarW}px 1fr` },
-        overflow: "hidden",
-      }}
-    >
-      {/* Left column (desktop) */}
-      {isMdUp && (
-        <Box
+    <>
+      <Box sx={{ position: "absolute", top: safeTop, left: 12, zIndex: 30 }}>
+        <Fab
+          variant="extended"
+          size="small"
+          onClick={() => setSidebarOpen(true)}
           sx={{
-            position: "relative",
-            display: "flex",
-            flexDirection: "column",
-            height: "100%",
-            borderRight: "1px solid",
+            textTransform: "none",
+            borderRadius: 999,
+            boxShadow: "none",
+            border: "1px solid",
             borderColor: "divider",
             bgcolor: "background.paper",
-            minWidth: 0,
-            minHeight: 0,
+            color: "text.primary",
+            "&:hover": { bgcolor: "background.paper" },
           }}
         >
-          {/* Drag resize handle */}
-          <Box
-            onPointerDown={startResize}
-            role="separator"
-            aria-orientation="vertical"
-            aria-label="Resize side panel"
-            sx={{
-              position: "absolute",
-              top: 0,
-              right: -4,
-              width: 8,
-              height: "100%",
-              cursor: "col-resize",
-              zIndex: 50,
-              "&:hover": { bgcolor: "action.hover" },
-            }}
-          />
+          <TableChartOutlinedIcon sx={{ mr: 1 }} />
+          Tool Info &amp; Controls
+        </Fab>
+      </Box>
 
-          <SidebarContent
-            sections={sections}
-            controlsText={controlsText}
-            region={region}
-            setRegion={setRegion}
-            displaySites={displaySites}
-            setDisplaySites={setDisplaySites}
-            patientDataMode={patientDataMode}
-            setPatientDataMode={setPatientDataMode}
-            hasNorm={hasNorm}
-            hasFreq={hasFreq}
-            isMdUp={isMdUp}
-          />
-        </Box>
-      )}
-
-      {/* Right column */}
-      <Box
-        sx={{
-          position: "relative",
-          height: "100%",
-          width: "100%",
-          overflow: "hidden",
-          isolation: "isolate",
-          minWidth: 0,
-          minHeight: 0,
+      <SwipeableDrawer
+        anchor="bottom"
+        open={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+        onOpen={() => setSidebarOpen(true)}
+        disableSwipeToOpen
+        swipeAreaWidth={24}
+        hysteresis={0.25}
+        minFlingVelocity={450}
+        slotProps={{
+          paper: {
+            sx: {
+              height: "70vh",
+              borderTopLeftRadius: 16,
+              borderTopRightRadius: 16,
+              overflow: "hidden",
+            },
+          },
         }}
       >
-        <HeatmapsViewer
-          selection={selection}
-          viewPreset={viewPreset}
-          onApiReady={(api) => (apiRef.current = api)}
-          onMetaReady={(meta) => {
-            setRegions(meta.regions);
-            setPatientDataKeys(meta.patientDataKeys);
-            setDefaultRegion(meta.defaultRegion);
-            setRegion((prev) => (meta.regions.includes(prev) ? prev : meta.defaultRegion));
-          }}
-        />
-
-        <CanvasControls
-          onZoomIn={() => apiRef.current?.zoomIn?.()}
-          onZoomOut={() => apiRef.current?.zoomOut?.()}
-          onReset={handleReset}
-        />
-        <ViewControls value={viewPreset} onChange={setViewPreset} />
-        {/* Overlay legend and selected region text on desktop, move legend to bottom on mobile */}
-        {isMdUp && <HeatmapLegend overlay compact={false} />}
-        <SelectedRegionOverlayText regionLabel={selectedRegionLabel} patientDataMode={patientDataMode} />
-
-        {/* Mobile drawer button */}
-        {!isMdUp && (
-          <>
-            <Box sx={{ position: "absolute", top: safeTop, left: 12, zIndex: 30 }}>
-              <Fab
-                variant="extended"
-                size="small"
-                onClick={() => setSidebarOpen(true)}
-                sx={{
-                  textTransform: "none",
-                  borderRadius: 999,
-                  boxShadow: "none",
-                  border: "1px solid",
-                  borderColor: "divider",
-                  bgcolor: "background.paper",
-                  color: "text.primary",
-                  "&:hover": { bgcolor: "background.paper" },
-                }}
-              >
-                <TableChartOutlinedIcon sx={{ mr: 1 }} />
-                Tool Info &amp; Controls
-              </Fab>
-            </Box>
-
-            <SwipeableDrawer
-              anchor="bottom"
-              open={sidebarOpen}
-              onClose={() => setSidebarOpen(false)}
-              onOpen={() => setSidebarOpen(true)}
-              disableSwipeToOpen
-              swipeAreaWidth={24}
-              hysteresis={0.25}
-              minFlingVelocity={450}
-              slotProps={{
-                paper: {
-                  sx: {
-                    height: "70vh",
-                    borderTopLeftRadius: 16,
-                    borderTopRightRadius: 16,
-                    overflow: "hidden",
-                  },
-                },
+        <Box sx={{ height: "100%", display: "flex", flexDirection: "column" }}>
+          <Box sx={{ p: 1, display: "flex", justifyContent: "center" }}>
+            <Box
+              sx={{
+                width: 44,
+                height: 4,
+                borderRadius: 999,
+                bgcolor: "text.disabled",
               }}
-            >
-              <Box sx={{ height: "100%", display: "flex", flexDirection: "column" }}>
-                <Box sx={{ p: 1, display: "flex", justifyContent: "center" }}>
-                  <Box
-                    sx={{
-                      width: 44,
-                      height: 4,
-                      borderRadius: 999,
-                      bgcolor: "text.disabled",
-                    }}
-                  />
-                </Box>
+            />
+          </Box>
 
-                <Box sx={{ flex: 1, minHeight: 0, overflow: "auto" }}>
-                  <SidebarContent
-                    sections={sections}
-                    controlsText={controlsText}
-                    region={region}
-                    setRegion={setRegion}
-                    displaySites={displaySites}
-                    setDisplaySites={setDisplaySites}
-                    patientDataMode={patientDataMode}
-                    setPatientDataMode={setPatientDataMode}
-                    hasNorm={hasNorm}
-                    hasFreq={hasFreq}
-                    isMdUp={isMdUp}
-                  />
-                </Box>
-              </Box>
-            </SwipeableDrawer>
-          </>
-        )}
-      </Box>
-    </Box>
+          <Box sx={{ flex: 1, minHeight: 0, overflow: "auto" }}>
+            <SidebarContent
+              sections={sections}
+              controlsText={controlsText}
+              region={region}
+              setRegion={setRegion}
+              melanomaSitesChecked={melanomaSitesChecked}
+              normalisedChecked={normalisedChecked}
+              handleToggleMelanomaSites={handleToggleMelanomaSites}
+              handleToggleNormalised={handleToggleNormalised}
+              isMdUp={isMdUp}
+            />
+          </Box>
+        </Box>
+      </SwipeableDrawer>
+    </>
   );
 }
 
@@ -386,27 +218,33 @@ function SidebarContent({
   controlsText,
   region,
   setRegion,
-  displaySites,
-  setDisplaySites,
-  patientDataMode,
-  setPatientDataMode,
-  hasNorm,
-  hasFreq,
+  melanomaSitesChecked,
+  normalisedChecked,
+  handleToggleMelanomaSites,
+  handleToggleNormalised,
   isMdUp,
 }) {
   const SECTION_ROW_SX = { fontWeight: 800 };
 
-  // Default options closed
   const [openSections, setOpenSections] = useState({
     "Head and Neck": false,
     "Torso and Upper Limb": false,
     "Lower Limb": false,
   });
 
-  const toggle = (key) => setOpenSections((prev) => ({ ...prev, [key]: !prev[key] }));
+  const toggle = (key) => {
+    setOpenSections((prev) => ({
+      ...prev,
+      [key]: !prev[key],
+    }));
+  };
 
   const sectionHasSelected = (sec) =>
-    sec.rows.some((r) => (r.type === "single" ? r.valueKey === region : r.left === region || r.right === region));
+    sec.rows.some((r) =>
+      r.type === "single"
+        ? r.valueKey === region
+        : r.left === region || r.right === region
+    );
 
   return (
     <>
@@ -438,7 +276,6 @@ function SidebarContent({
           Heatmap selection
         </Typography>
 
-        {/* Region table with collapsible sections */}
         <TableContainer>
           <Table size="small">
             <TableHead>
@@ -460,7 +297,6 @@ function SidebarContent({
 
                 return (
                   <Fragment key={sec.title}>
-                    {/* Section header row */}
                     <TableRow
                       hover
                       sx={{
@@ -492,7 +328,6 @@ function SidebarContent({
                       <TableCell />
                     </TableRow>
 
-                    {/* Child rows rendered in the same table */}
                     {open &&
                       sec.rows.map((r, idx) => {
                         if (r.type === "single") {
@@ -506,6 +341,7 @@ function SidebarContent({
                             />
                           );
                         }
+
                         return (
                           <HeatmapRow
                             key={`${sec.title}-lr-${idx}`}
@@ -526,7 +362,6 @@ function SidebarContent({
 
         <Divider sx={{ my: 2 }} />
 
-        {/* Number of draining node fields */}
         <Typography sx={{ fontWeight: 800, mb: 1 }}>
           Number of draining node fields
         </Typography>
@@ -549,19 +384,36 @@ function SidebarContent({
               </TableCell>
             </TableRow>
           </TableHead>
+
           <TableBody>
             <TableRow hover>
               <TableCell />
-              <TableCell align="center" onClick={() => setRegion("1 Draining Node Fields")} sx={{ cursor: "pointer" }}>
+              <TableCell
+                align="center"
+                onClick={() => setRegion("1 Draining Node Fields")}
+                sx={{ cursor: "pointer" }}
+              >
                 <Radio checked={region === "1 Draining Node Fields"} />
               </TableCell>
-              <TableCell align="center" onClick={() => setRegion("2 Or More Draining Node Fields")} sx={{ cursor: "pointer" }}>
+              <TableCell
+                align="center"
+                onClick={() => setRegion("2 Or More Draining Node Fields")}
+                sx={{ cursor: "pointer" }}
+              >
                 <Radio checked={region === "2 Or More Draining Node Fields"} />
               </TableCell>
-              <TableCell align="center" onClick={() => setRegion("3 Or More Draining Node Fields")} sx={{ cursor: "pointer" }}>
+              <TableCell
+                align="center"
+                onClick={() => setRegion("3 Or More Draining Node Fields")}
+                sx={{ cursor: "pointer" }}
+              >
                 <Radio checked={region === "3 Or More Draining Node Fields"} />
               </TableCell>
-              <TableCell align="center" onClick={() => setRegion("4 Or More Draining Node Fields")} sx={{ cursor: "pointer" }}>
+              <TableCell
+                align="center"
+                onClick={() => setRegion("4 Or More Draining Node Fields")}
+                sx={{ cursor: "pointer" }}
+              >
                 <Radio checked={region === "4 Or More Draining Node Fields"} />
               </TableCell>
             </TableRow>
@@ -569,43 +421,39 @@ function SidebarContent({
         </Table>
       </Paper>
 
-      {/* Display sites and patient data mode*/}
       <Paper variant="outlined" sx={{ m: 2, p: 2, borderRadius: 3 }}>
-        <Table size="small">
-          <TableBody>
-            <TableRow hover>
-              <TableCell>Display melanoma sites</TableCell>
-              <TableCell align="center">
-                <Switch
-                  checked={displaySites}
-                  onChange={(e) => setDisplaySites(e.target.checked)}
-                />
-              </TableCell>
-            </TableRow>
+        <Stack
+          direction="row"
+          spacing={1.5}
+          alignItems="center"
+          flexWrap="wrap"
+        >
+          <Typography sx={{ fontWeight: 700 }}>
+            Display:
+          </Typography>
 
-            <TableRow hover>
-              <TableCell>Frequency</TableCell>
-              <TableCell
-                align="center"
-                sx={{ cursor: hasFreq ? "pointer" : "default" }}
-                onClick={() => hasFreq && setPatientDataMode("freq")}
-              >
-                <Radio checked={patientDataMode === "freq"} disabled={!hasFreq} />
-              </TableCell>
-            </TableRow>
+          <FormControlLabel
+            control={
+              <Checkbox
+                checked={melanomaSitesChecked}
+                onChange={handleToggleMelanomaSites}
+              />
+            }
+            label="Melanoma sites"
+            sx={{ m: 0 }}
+          />
 
-            <TableRow hover>
-              <TableCell>Normalised (% Drainage likelihood)</TableCell>
-              <TableCell
-                align="center"
-                sx={{ cursor: hasNorm ? "pointer" : "default" }}
-                onClick={() => hasNorm && setPatientDataMode("norm")}
-              >
-                <Radio checked={patientDataMode === "norm"} disabled={!hasNorm} />
-              </TableCell>
-            </TableRow>
-          </TableBody>
-        </Table>
+          <FormControlLabel
+            control={
+              <Checkbox
+                checked={normalisedChecked}
+                onChange={handleToggleNormalised}
+              />
+            }
+            label="Normalised"
+            sx={{ m: 0 }}
+          />
+        </Stack>
       </Paper>
 
       {!isMdUp && (
@@ -647,42 +495,30 @@ function HeatmapSingleRow({ label, valueKey, value, onChange }) {
   return (
     <TableRow hover sx={{ cursor: "pointer" }} onClick={() => onChange(valueKey)}>
       <TableCell sx={{ pl: 6 }}>{label}</TableCell>
-      <TableCell align="center" sx={{ px: 1 }}><Radio checked={checked} /></TableCell>
-      <TableCell align="center" sx={{ px: 1 }}><Radio checked={checked} /></TableCell>
+      <TableCell align="center" sx={{ px: 1 }}>
+        <Radio checked={checked} />
+      </TableCell>
+      <TableCell align="center" sx={{ px: 1 }}>
+        <Radio checked={checked} />
+      </TableCell>
     </TableRow>
   );
 }
 
-function HeatmapLegend({ compact = false, overlay = false }) {
+function HeatmapLegend({ compact = false }) {
   return (
     <Paper
-      variant={overlay ? "outlined" : "elevation"}
       elevation={0}
       sx={{
-        ...(overlay
-          ? {
-            position: "absolute",
-            left: 12,
-            bottom: 12,
-            zIndex: 25,
-            pointerEvents: "none", // don't block 3D controls
-            p: compact ? 1 : 1.25,
-            borderRadius: 2.5,
-            bgcolor: "background.paper",
-            width: compact ? 180 : 260,
-          }
-          : {
-            // don't look like a floating card
-            position: "static",
-            pointerEvents: "auto",
-            width: "100%",
-            maxWidth: "100%",
-            bgcolor: "transparent",
-            border: "none",
-            boxShadow: "none",
-            p: 0,
-            borderRadius: 0,
-          }),
+        position: "static",
+        pointerEvents: "auto",
+        width: "100%",
+        maxWidth: "100%",
+        bgcolor: "transparent",
+        border: "none",
+        boxShadow: "none",
+        p: 0,
+        borderRadius: 0,
       }}
     >
       <Box sx={{ display: "flex", alignItems: "center", mb: 0.5 }}>
@@ -719,30 +555,5 @@ function HeatmapLegend({ compact = false, overlay = false }) {
         />
       </Box>
     </Paper>
-  );
-}
-
-function SelectedRegionOverlayText({ regionLabel, patientDataMode }) {
-  const modeLabel = patientDataMode === "freq" ? "Frequency" : "Normalised";
-
-  return (
-    <Typography
-      variant="body2"
-      sx={{
-        position: "absolute",
-        left: "50%",
-        bottom: 12,
-        transform: "translateX(-50%)",
-        zIndex: 26,
-        fontWeight: 700,
-        pointerEvents: "none",
-        maxWidth: "calc(100% - 24px)",
-        whiteSpace: "nowrap",
-        overflow: "hidden",
-        textOverflow: "ellipsis",
-      }}
-    >
-      Region: {regionLabel} | {modeLabel}
-    </Typography>
   );
 }

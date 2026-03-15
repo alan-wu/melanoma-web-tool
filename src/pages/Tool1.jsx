@@ -1,4 +1,3 @@
-import { useRef, useState, useEffect } from "react";
 import {
   Box,
   Paper,
@@ -13,260 +12,143 @@ import {
   Checkbox,
   FormControlLabel,
   SwipeableDrawer,
-  useMediaQuery,
   Fab,
 } from "@mui/material";
 import TableChartOutlinedIcon from "@mui/icons-material/TableChartOutlined";
+import { useOutletContext } from "react-router-dom";
+import { useState } from "react";
 
-import { useTheme } from "@mui/material/styles";
-
-import ViewControls from "../components/ViewControls";
-import CanvasControls from "../components/CanvasControls";
-import SkinSelectionViewer from "../components/SkinSelectionViewer";
-
-const MIN_SIDEBAR_W = 290;
-const MAX_SIDEBAR_W = 720;
-const DEFAULT_SIDEBAR_W = 520;
 const safeTop = "calc(env(safe-area-inset-top, 0px) + 12px)";
 
-
 export default function Tool1() {
-  // Table rows populated by canvas element selection
-  const [rows, setRows] = useState([]);
+  const { isMdUp, skinState, setSkinState } = useOutletContext();
 
-  // Overlay toggles
-  const [showPatientCounts, setShowPatientCounts] = useState(true);
-  const [showNodecodes, setShowNodecodes] = useState(true);
-  const [showDrainage, setShowDrainage] = useState(true);
-
-  // View preset buttons
-  const [viewPreset, setViewPreset] = useState("All");
-
-  // Mobile drawer state
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  // Canvas control API 
-  const apiRef = useRef(null);
-
-  const handleReset = () => {
-    setViewPreset("All"); // make the View FAB show All
-    setRows([]);          //  clear the table immediately
-    apiRef.current?.resetAll?.(); // Clear selection and camera inside Three.js
-  };
-
   const controlsText =
-    "Controls: left mouse button to rotate, right mouse button to pan. Mouse wheel to zoom. Double click to focus. Control pannel located on top left.";
+    "Controls: left mouse button to rotate, right mouse button to pan. Mouse wheel to zoom. Double click to focus. Control panel located on top left.";
 
+  const {
+    rows,
+    showPatientCounts,
+    showNodecodes,
+    showDrainage,
+  } = skinState;
 
-  const theme = useTheme();
-  const isMdUp = useMediaQuery(theme.breakpoints.up("md"));
-  const [sidebarW, setSidebarW] = useState(() => {
-    const saved = Number(window.localStorage.getItem("tool1_sidebarW"));
-    return Number.isFinite(saved) && saved > 0 ? saved : DEFAULT_SIDEBAR_W;
-  });
-
-  useEffect(() => {
-    window.localStorage.setItem("tool1_sidebarW", String(sidebarW));
-  }, [sidebarW]);
-
-  const startResize = (e) => {
-    if (!isMdUp) return;
-    if (e.button !== 0) return;
-
-    e.preventDefault();
-
-    const startX = e.clientX;
-    const startW = sidebarW;
-
-    document.body.style.cursor = "col-resize";
-    document.body.style.userSelect = "none";
-
-    const onMove = (ev) => {
-      const next = Math.min(
-        MAX_SIDEBAR_W,
-        Math.max(MIN_SIDEBAR_W, startW + (ev.clientX - startX))
-      );
-      setSidebarW(next);
-    };
-
-    const onUp = () => {
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-      document.body.style.cursor = "";
-      document.body.style.userSelect = "";
-    };
-
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
+  const setShowPatientCounts = (value) => {
+    setSkinState((prev) => ({
+      ...prev,
+      showPatientCounts: value,
+    }));
   };
 
+  const setShowNodecodes = (value) => {
+    setSkinState((prev) => ({
+      ...prev,
+      showNodecodes: value,
+    }));
+  };
 
+  const setShowDrainage = (value) => {
+    setSkinState((prev) => ({
+      ...prev,
+      showDrainage: value,
+    }));
+  };
+
+  // Desktop: render only the sidebar content
+  if (isMdUp) {
+    return (
+      <Box sx={{ height: "100%", display: "flex", flexDirection: "column" }}>
+        <SidebarContent
+          rows={rows}
+          showPatientCounts={showPatientCounts}
+          setShowPatientCounts={setShowPatientCounts}
+          showNodecodes={showNodecodes}
+          setShowNodecodes={setShowNodecodes}
+          showDrainage={showDrainage}
+          setShowDrainage={setShowDrainage}
+          controlsText={controlsText}
+        />
+      </Box>
+    );
+  }
+
+  // Mobile: floating button + bottom drawer
   return (
-    <Box
-      sx={{
-        position: "relative",
-        height: { xs: "calc(100dvh - 56px)", sm: "calc(100dvh - 64px)" },
-        width: "100%",
-        display: { xs: "block", md: "grid" },
-        gridTemplateColumns: { md: `${sidebarW}px 1fr` },
-        overflow: "hidden",
-      }}
-    >
-      {/* Left column */}
-      {isMdUp && (
-        <Box
+    <>
+      <Box sx={{ position: "absolute", top: safeTop, left: 12, zIndex: 30 }}>
+        <Fab
+          variant="extended"
+          size="small"
+          onClick={() => setSidebarOpen(true)}
           sx={{
-            position: "relative",
-            display: "flex",
-            flexDirection: "column",
-            height: "100%",
-            borderRight: "1px solid",
+            textTransform: "none",
+            borderRadius: 999,
+            boxShadow: "none",
+            border: "1px solid",
             borderColor: "divider",
             bgcolor: "background.paper",
-            minWidth: 0,
-            minHeight: 0,
+            color: "text.primary",
+            "&:hover": { bgcolor: "background.paper" },
           }}
         >
-          {/* Drag resize handle */}
-          <Box
-            onPointerDown={startResize}
-            role="separator"
-            aria-orientation="vertical"
-            aria-label="Resize side panel"
-            sx={{
-              position: "absolute",
-              top: 0,
-              right: -4,
-              width: 8,
-              height: "100%",
-              cursor: "col-resize",
-              zIndex: 50,
-              "&:hover": { bgcolor: "action.hover" },
-            }}
-          />
-          <SidebarContent
-            rows={rows}
-            showPatientCounts={showPatientCounts}
-            setShowPatientCounts={setShowPatientCounts}
-            showNodecodes={showNodecodes}
-            setShowNodecodes={setShowNodecodes}
-            showDrainage={showDrainage}
-            setShowDrainage={setShowDrainage}
-            controlsText={controlsText}
-          />
-        </Box>
-      )}
+          <TableChartOutlinedIcon sx={{ mr: 1 }} />
+          Tool Info &amp; Tables
+        </Fab>
+      </Box>
 
-      {/* Right column */}
-      <Box
-        sx={{
-          position: "relative",
-          height: "100%",
-          width: "100%",
-          overflow: "hidden",
-          isolation: "isolate",
-          minWidth: 0,
-          minHeight: 0,
+      <SwipeableDrawer
+        anchor="bottom"
+        open={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+        onOpen={() => setSidebarOpen(true)}
+        disableSwipeToOpen
+        swipeAreaWidth={24}
+        hysteresis={0.25}
+        minFlingVelocity={450}
+        slotProps={{
+          paper: {
+            sx: {
+              height: "70vh",
+              borderTopLeftRadius: 16,
+              borderTopRightRadius: 16,
+              overflow: "hidden",
+            },
+          },
         }}
       >
-        {/* threejs engine integration*/}
-        <SkinSelectionViewer
-          onRowsChange={setRows}
-          showNodecodes={showNodecodes}
-          showDrainage={showDrainage}
-          showPatientCounts={showPatientCounts}
-          viewPreset={viewPreset}
-          onApiReady={(api) => (apiRef.current = api)}
-        />
-
-        <CanvasControls
-          onZoomIn={() => apiRef.current?.zoomIn()}
-          onZoomOut={() => apiRef.current?.zoomOut()}
-          onReset={handleReset}
-        />
-        <ViewControls value={viewPreset} onChange={setViewPreset} />
-
-        {/* Mobile view which opens sidebar button with swipeabledrawer */}
-        {!isMdUp && (
-          <>
-            <Box sx={{ position: "absolute", top: safeTop, left: 12, zIndex: 30 }}>
-              <Fab
-                variant="extended"
-                size="small"
-                onClick={() => setSidebarOpen(true)}
-                sx={{
-                  textTransform: "none",
-                  borderRadius: 999,
-                  boxShadow: "none",
-                  border: "1px solid",
-                  borderColor: "divider",
-                  bgcolor: "background.paper",
-                  color: "text.primary",
-                  "&:hover": { bgcolor: "background.paper" },
-                }}
-              >
-                <TableChartOutlinedIcon sx={{ mr: 1 }} />
-                Tool Info &amp; Tables
-              </Fab>
-            </Box>
-
-            <SwipeableDrawer
-              anchor="bottom"
-              open={sidebarOpen}
-              onClose={() => setSidebarOpen(false)}
-              onOpen={() => setSidebarOpen(true)}
-              disableSwipeToOpen
-              swipeAreaWidth={24}
-              hysteresis={0.25}
-              minFlingVelocity={450}
-              slotProps={{
-                paper: {
-                  sx: {
-                    height: "70vh",
-                    borderTopLeftRadius: 16,
-                    borderTopRightRadius: 16,
-                    overflow: "hidden",
-                  },
-                },
+        <Box sx={{ height: "100%", display: "flex", flexDirection: "column" }}>
+          {/* Pull handle */}
+          <Box sx={{ p: 1, display: "flex", justifyContent: "center" }}>
+            <Box
+              sx={{
+                width: 44,
+                height: 4,
+                borderRadius: 999,
+                bgcolor: "text.disabled",
               }}
-            >
+            />
+          </Box>
 
-              <Box sx={{ height: "100%", display: "flex", flexDirection: "column" }}>
-                {/* Pull handle */}
-                <Box sx={{ p: 1, display: "flex", justifyContent: "center" }}>
-                  <Box
-                    sx={{
-                      width: 44,
-                      height: 4,
-                      borderRadius: 999,
-                      bgcolor: "text.disabled",
-                    }}
-                  />
-                </Box>
-
-                {/* Sidebar content */}
-                <Box sx={{ flex: 1, minHeight: 0, overflow: "auto" }}>
-                  <SidebarContent
-                    rows={rows}
-                    showPatientCounts={showPatientCounts}
-                    setShowPatientCounts={setShowPatientCounts}
-                    showNodecodes={showNodecodes}
-                    setShowNodecodes={setShowNodecodes}
-                    showDrainage={showDrainage}
-                    setShowDrainage={setShowDrainage}
-                    controlsText={controlsText}
-                  />
-                </Box>
-              </Box>
-            </SwipeableDrawer>
-
-          </>
-        )}
-      </Box>
-    </Box>
+          {/* Drawer content */}
+          <Box sx={{ flex: 1, minHeight: 0, overflow: "auto" }}>
+            <SidebarContent
+              rows={rows}
+              showPatientCounts={showPatientCounts}
+              setShowPatientCounts={setShowPatientCounts}
+              showNodecodes={showNodecodes}
+              setShowNodecodes={setShowNodecodes}
+              showDrainage={showDrainage}
+              setShowDrainage={setShowDrainage}
+              controlsText={controlsText}
+            />
+          </Box>
+        </Box>
+      </SwipeableDrawer>
+    </>
   );
 }
-
 
 function SidebarContent({
   rows,
@@ -293,7 +175,7 @@ function SidebarContent({
         </Typography>
       </Paper>
 
-      {/* Tables area */}
+      {/* Table area */}
       <Paper
         variant="outlined"
         sx={{
@@ -309,7 +191,6 @@ function SidebarContent({
         <Typography sx={{ fontWeight: 800, mb: 1 }}>
           Lymphatic Drainage Statistics
         </Typography>
-
 
         <TableContainer sx={{ flex: 1, minHeight: 0, overflow: "auto" }}>
           <Table size="small">
@@ -346,6 +227,7 @@ function SidebarContent({
         </TableContainer>
       </Paper>
 
+      {/* Display toggles */}
       <Paper variant="outlined" sx={{ m: 2, p: 2, borderRadius: 3 }}>
         <Stack
           direction="row"
