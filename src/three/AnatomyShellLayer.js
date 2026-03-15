@@ -145,9 +145,9 @@ export class AnatomyShellLayer {
     }
   }
 
-dispose() {
-  this.root = null;
-  this.lines = null;
-  this.selectable = [];
-}
+  dispose() {
+    this.root = null;
+    this.lines = null;
+    this.selectable = [];
+  }
 }
