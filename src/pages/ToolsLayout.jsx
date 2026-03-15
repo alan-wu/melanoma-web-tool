@@ -130,7 +130,7 @@ export default function ToolsLayout() {
       setHeatmapState((prev) => ({
         ...prev,
         region: prev.defaultRegion || "Right Axilla",
-        pointDisplayMode: "none",
+        pointDisplayMode: "normalised",
       }));
     }
 
