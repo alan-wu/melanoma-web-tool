@@ -101,6 +101,7 @@ export class SharedBodyEngine extends Base3DEngine {
 
       this.heatmapLayer.setSelection({
         region: meta.defaultRegion,
+        pointDisplayMode: "normalised",
       });
 
       this._heatmapInitialised = true;

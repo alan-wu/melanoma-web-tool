@@ -8,7 +8,7 @@ export class HeatmapLayer {
 
     this.selection = {
       region: "Right Axilla",
-      pointDisplayMode: "none", // "none" | "sites" | "normalised"
+      pointDisplayMode: "normalised", // none or sites or normalised
     };
 
     this.enabled = false;
