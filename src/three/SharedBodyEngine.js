@@ -1,7 +1,7 @@
 import { Base3DEngine } from "./Base3DEngine";
-import { AnatomyShellLayer } from "./layers/AnatomyShellLayer";
-import { SkinSelectionLayer } from "./layers/SkinSelectionLayer";
-import { HeatmapLayer } from "./layers/HeatmapLayer";
+import { AnatomyShellLayer } from "./AnatomyShellLayer";
+import { SkinSelectionLayer } from "./SkinSelectionLayer";
+import { HeatmapLayer } from "./HeatmapLayer";
 
 export class SharedBodyEngine extends Base3DEngine {
   constructor({
