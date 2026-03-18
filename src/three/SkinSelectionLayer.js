@@ -11,7 +11,6 @@ export class SkinSelectionLayer {
     anatomyShell,
     onRowsChange,
     onFocusChange,
-    hasFocusPoint,
   }) {
     this.scene = scene;
     this.camera = camera;
@@ -21,17 +20,15 @@ export class SkinSelectionLayer {
     this.anatomyShell = anatomyShell;
     this.onRowsChange = onRowsChange;
     this.onFocusChange = onFocusChange;
-    this.hasFocusPoint = hasFocusPoint;
-
 
     this.pointer = new THREE.Vector2();
     this.raycaster = new THREE.Raycaster();
 
     this.selectable = anatomyShell?.selectable ?? [];
     this.INTERSECTED = null;
-    this.SELECTED = null;
 
     this.rows = [];
+    this._lastSelectionMesh = null;
     this.enabled = false;
 
     this.showFlags = {
@@ -48,16 +45,9 @@ export class SkinSelectionLayer {
     this.lymph_lookup = {};
 
     this._sharedSphereGeometry = null;
-
-    this._drag = false;
     this._needsHoverUpdate = false;
-    this._isPointerDown = false;
-    this._downClient = { x: 0, y: 0 };
-    this._dragThresholdPx = 4;
 
     this._onPointerMove = this._onPointerMove.bind(this);
-    this._onPointerDown = this._onPointerDown.bind(this);
-    this._onPointerUp = this._onPointerUp.bind(this);
   }
 
   async init() {
@@ -88,7 +78,6 @@ export class SkinSelectionLayer {
 
     this.data_elements = dataElements ?? {};
     this.patient_counts = patientCounts ?? {};
-
     this._sharedSphereGeometry = new THREE.SphereGeometry(18, 32, 32);
 
     for (const l of lymphs) {
@@ -118,25 +107,17 @@ export class SkinSelectionLayer {
 
     if (enabled) {
       this.host.addEventListener("pointermove", this._onPointerMove);
-      this.host.addEventListener("pointerdown", this._onPointerDown);
-      this.host.addEventListener("pointerup", this._onPointerUp);
-      this.host.addEventListener("pointercancel", this._onPointerUp);
+      this._lastSelectionMesh = null;
     } else {
       this.host.removeEventListener("pointermove", this._onPointerMove);
-      this.host.removeEventListener("pointerdown", this._onPointerDown);
-      this.host.removeEventListener("pointerup", this._onPointerUp);
-      this.host.removeEventListener("pointercancel", this._onPointerUp);
 
       if (this.INTERSECTED?.material?.emissive) {
         this.INTERSECTED.material.emissive.setHex(0x000000);
       }
       this.INTERSECTED = null;
       this._needsHoverUpdate = false;
-      this._drag = false;
-      this._isPointerDown = false;
     }
 
-    this._setObjectsVisibleForMode();
     this._applyLabels();
   }
 
@@ -145,8 +126,27 @@ export class SkinSelectionLayer {
     this._applyLabels();
   }
 
+  hasSelection() {
+    return this.anatomyShell?.hasSelection?.() ?? false;
+  }
+
+  getSelectedFocusInfo() {
+    return this.anatomyShell?.getSelectedFocusInfo?.() ?? null;
+  }
+
+  getPresetFocusInfo() {
+    const selected = this.getSelectedFocusInfo();
+    if (selected) return selected;
+    return null;
+  }
+
   beforeRender() {
     if (!this.enabled) return;
+
+    const selectedMesh = this.anatomyShell?.getSelectedMesh?.() ?? null;
+    if (selectedMesh !== this._lastSelectionMesh) {
+      this._syncFromSharedSelection();
+    }
 
     if (this._needsHoverUpdate) {
       this._updateHover();
@@ -166,12 +166,6 @@ export class SkinSelectionLayer {
   }
 
   reset() {
-    if (this.SELECTED?.material?.color) {
-      this.SELECTED.material.color.set("#E5B27F");
-      this.SELECTED.material.opacity = 0.5;
-    }
-    this.SELECTED = null;
-
     if (this.INTERSECTED?.material?.emissive) {
       this.INTERSECTED.material.emissive.setHex(0x000000);
     }
@@ -190,6 +184,8 @@ export class SkinSelectionLayer {
     this.onRowsChange?.([]);
 
     this.anatomyShell?.clearSelection?.();
+    this.onFocusChange?.(null);
+    this._lastSelectionMesh = null;
     this._applyLabels();
   }
 
@@ -200,45 +196,12 @@ export class SkinSelectionLayer {
       this.labelRenderer.domElement.parentNode.removeChild(this.labelRenderer.domElement);
     }
 
-    if (this.tooltip) {
-      this.scene?.remove(this.tooltip);
-    }
-
-    for (const item of Object.values(this.lymph_lookup)) {
-      if (item.sphere) this.scene?.remove(item.sphere);
-      if (item.label) this.scene?.remove(item.label);
-
-      if (item.sphere?.material) {
-        item.sphere.material.dispose?.();
-      }
-    }
-
-    this._sharedSphereGeometry?.dispose?.();
-    this._sharedSphereGeometry = null;
-
     this.labelRenderer = null;
     this.tooltip = null;
     this.lymph_lookup = {};
     this.rows = [];
-    this.SELECTED = null;
+    this._lastSelectionMesh = null;
     this.INTERSECTED = null;
-  }
-
-  _setObjectsVisibleForMode() {
-    const visible = this.enabled;
-
-    if (this.tooltip) {
-      this.tooltip.visible =
-        visible &&
-        Boolean(this.SELECTED) &&
-        Boolean(this.showFlags.showPatientCounts);
-    }
-
-    for (const item of Object.values(this.lymph_lookup)) {
-      const selectedVisible = visible && this.rows.some((r) => r.code && item.codeSpan?.textContent === r.code);
-      item.sphere.visible = selectedVisible;
-      item.label.visible = selectedVisible && (this.showFlags.showNodecodes || this.showFlags.showDrainage);
-    }
   }
 
   _makeSphere(pos) {
@@ -296,7 +259,7 @@ export class SkinSelectionLayer {
     if (this.tooltip) {
       this.tooltip.visible =
         this.enabled &&
-        Boolean(this.SELECTED) &&
+        this.hasSelection() &&
         Boolean(showPatientCounts);
     }
 
@@ -313,6 +276,65 @@ export class SkinSelectionLayer {
 
       item.sphere.visible = this.enabled;
     }
+  }
+
+  _syncFromSharedSelection() {
+    const selectedMesh = this.anatomyShell?.getSelectedMesh?.() ?? null;
+    this._lastSelectionMesh = selectedMesh;
+
+    for (const v of Object.values(this.lymph_lookup)) {
+      v.sphere.visible = false;
+      v.label.visible = false;
+    }
+
+    if (!selectedMesh) {
+      this.rows = [];
+      this.onRowsChange?.([]);
+
+      if (this.tooltip) {
+        this.tooltip.visible = false;
+      }
+
+      this._applyLabels();
+      return;
+    }
+
+    const centre = this.anatomyShell?.getCenterPoint?.(selectedMesh);
+    const name = selectedMesh?.name;
+    const rows =
+      this.data_elements?.[name] ||
+      this.data_elements?.[name?.replace?.(/_/g, " ")] ||
+      [];
+
+    this.rows = rows;
+    this.onRowsChange?.(rows);
+
+    const elementKey = name?.replace?.("element_", "");
+    const count = this.patient_counts?.[elementKey] ?? 0;
+
+    if (this.tooltip && centre) {
+      this.tooltip.element.textContent = String(count);
+      this.tooltip.visible = Boolean(this.showFlags.showPatientCounts);
+      this.tooltip.position.copy(centre);
+    }
+
+    for (const r of rows) {
+      const item = this.lymph_lookup[r.code];
+      if (!item) continue;
+
+      item.sphere.visible = true;
+      item.label.visible = true;
+
+      item.codeSpan.textContent = r.code;
+      item.pctSpan.textContent = `${String(r.percentage).trim()}%`;
+
+      const pct = parseFloat(r.percentage) / 50;
+      item.sphere.scale.setScalar(
+        Number.isFinite(pct) ? pct : 0.5
+      ).clampScalar(0.5, 1);
+    }
+
+    this._applyLabels();
   }
 
   _onPointerMove(e) {
@@ -333,108 +355,6 @@ export class SkinSelectionLayer {
       this.pointer.y = newY;
       this._needsHoverUpdate = true;
     }
-
-    if (this._isPointerDown && !this._drag) {
-      const dx = e.clientX - this._downClient.x;
-      const dy = e.clientY - this._downClient.y;
-      if (Math.hypot(dx, dy) >= this._dragThresholdPx) {
-        this._drag = true;
-      }
-    }
-  }
-
-  _onPointerDown(e) {
-    if (!this.enabled) return;
-
-    this._isPointerDown = true;
-    this._drag = false;
-    this._downClient.x = e.clientX;
-    this._downClient.y = e.clientY;
-
-    this.host.setPointerCapture?.(e.pointerId);
-  }
-
-  _onPointerUp(e) {
-    if (!this.enabled) return;
-
-    this.host.releasePointerCapture?.(e.pointerId);
-
-    const wasDrag = this._drag;
-    this._isPointerDown = false;
-    this._drag = false;
-
-    if (wasDrag) return;
-    if (!this._isClientPointInsideHost(e.clientX, e.clientY)) return;
-
-    this._updatePointerFromEvent(e);
-
-    this.raycaster.setFromCamera(this.pointer, this.camera);
-    const hits = this.raycaster.intersectObjects(this.selectable, true);
-    if (hits.length === 0) return;
-
-    const clickedObject = hits[0].object;
-    const selectionChanged = this.SELECTED !== clickedObject;
-
-    if (this.SELECTED?.material?.color) {
-      this.SELECTED.material.color.set("#E5B27F");
-      this.SELECTED.material.opacity = 0.5;
-    }
-
-    this.SELECTED = clickedObject;
-
-    if (this.SELECTED?.material?.color) {
-      this.SELECTED.material.color.setHex(0xff0000);
-      this.SELECTED.material.opacity = 0.5;
-    }
-
-    const centre = this.anatomyShell?.getCenterPoint?.(this.SELECTED);
-
-    // Match old behaviour:
-    // only update focus if selection changed or no focus exists yet
-    if (centre && (selectionChanged || !this.hasFocusPoint?.())) {
-      this.onFocusChange?.(centre);
-    }
-
-    for (const v of Object.values(this.lymph_lookup)) {
-      v.sphere.visible = false;
-      v.label.visible = false;
-    }
-
-    const name = this.SELECTED.name;
-    const rows =
-      this.data_elements?.[name] ||
-      this.data_elements?.[name?.replace?.(/_/g, " ")] ||
-      [];
-
-    this.rows = rows;
-    this.onRowsChange?.(rows);
-
-    const elementKey = name.replace("element_", "");
-    const count = this.patient_counts?.[elementKey] ?? 0;
-
-    if (this.tooltip && centre) {
-      this.tooltip.element.textContent = String(count);
-      this.tooltip.visible = Boolean(this.showFlags.showPatientCounts);
-      this.tooltip.position.copy(centre);
-    }
-
-    for (const r of rows) {
-      const item = this.lymph_lookup[r.code];
-      if (!item) continue;
-
-      item.sphere.visible = true;
-      item.label.visible = true;
-
-      item.codeSpan.textContent = r.code;
-      item.pctSpan.textContent = `${String(r.percentage).trim()}%`;
-
-      const pct = parseFloat(r.percentage) / 50;
-      item.sphere.scale
-        .setScalar(Number.isFinite(pct) ? pct : 0.5)
-        .clampScalar(0.5, 1);
-    }
-
-    this._applyLabels();
   }
 
   _setControlsTarget(point) {
@@ -471,7 +391,8 @@ export class SkinSelectionLayer {
 
         this.INTERSECTED = obj;
 
-        if (this.INTERSECTED?.material?.emissive) {
+        const selectedMesh = this.anatomyShell?.getSelectedMesh?.();
+        if (this.INTERSECTED !== selectedMesh && this.INTERSECTED?.material?.emissive) {
           this.INTERSECTED.material.emissive.setHex(0xff0000);
         }
       }
