@@ -24,6 +24,10 @@ export class Base3DEngine {
     this._raf = null;
     this._resizeObserver = null;
     this._disposed = false;
+
+    this.defaultViewDirection = new THREE.Vector3(
+      ...DEFAULT_CAMERA_POSITION
+    ).normalize();
   }
 
   initCore() {
@@ -65,24 +69,76 @@ export class Base3DEngine {
     this._resizeObserver.observe(this.host);
   }
 
+  _frameDistanceForRadius(radius, padding = 1.4, min = 220, max = 8000) {
+    const safeRadius = Math.max(radius || 1, 1);
+    const fovRad = THREE.MathUtils.degToRad(this.camera.fov);
+    const dist = (safeRadius / Math.tan(fovRad / 2)) * padding;
+    return THREE.MathUtils.clamp(dist, min, max);
+  }
+
+  getGlobalFrameInfo() {
+    return {
+      point: new THREE.Vector3(0, 0, 0),
+      radius: null,
+    };
+  }
+
+  getPresetFocusInfo() {
+    return {
+      point: this.getFocusPoint().clone(),
+      radius: null,
+    };
+  }
+
+  getZoomFocusInfo() {
+    return {
+      point: this.getFocusPoint().clone(),
+      radius: null,
+    };
+  }
+
   setViewPreset(preset) {
     if (!this.controls || !this.camera) return;
 
-    const pivot = this.getFocusPoint().clone();
-    const distance = this.camera.position.distanceTo(pivot);
+    // All should use the global model framing, not selection framing
+    if (preset === "All") {
+      const globalInfo = this.getGlobalFrameInfo();
 
-    const dir = new THREE.Vector3(0, 1, 0);
+      const pivot = globalInfo.point.clone();
+      const distance = globalInfo.radius
+        ? this._frameDistanceForRadius(globalInfo.radius, 1.25, 700, 8000)
+        : 3500;
 
-    if (preset === "Posterior") dir.set(0, -1, 0);
-    else if (preset === "Left lateral") dir.set(-1, 0, 0);
-    else if (preset === "Right lateral") dir.set(1, 0, 0);
-    else if (preset === "Anterior") dir.set(0, 1, 0);
-    else if (preset === "All") {
-      this.controls.reset();
+      this.camera.position.copy(pivot).addScaledVector(this.defaultViewDirection, distance);
       this.camera.up.set(0, 0, 1);
+
+      this.hasFocusPoint = false;
+      this.focusPoint.set(0, 0, 0);
+
       this.setControlsTarget(pivot);
       this.controls.update();
       return;
+    }
+
+    const focus = this.getPresetFocusInfo();
+
+    const pivot = focus.point.clone();
+
+    let dir = null;
+    if (preset === "Anterior") dir = new THREE.Vector3(0, 1, 0);
+    else if (preset === "Posterior") dir = new THREE.Vector3(0, -1, 0);
+    else if (preset === "Left lateral") dir = new THREE.Vector3(-1, 0, 0);
+    else if (preset === "Right lateral") dir = new THREE.Vector3(1, 0, 0);
+    else return;
+
+    let distance;
+    if (focus.radius && Number.isFinite(focus.radius)) {
+      // Use local selected object framing if available,
+      // otherwise global model framing info should be supplied by caller
+      const padding = focus.radius < 150 ? 2.0 : 1.3;
+      distance = this._frameDistanceForRadius(focus.radius, padding, 220, 8000);
+    } else {
+      distance = Math.max(this.camera.position.distanceTo(pivot), 220);
     }
 
     this.camera.position.copy(pivot).addScaledVector(dir, distance);
@@ -92,17 +148,29 @@ export class Base3DEngine {
   }
 
   zoomIn() {
+    const focusInfo = this.getZoomFocusInfo();
+    if (focusInfo?.point) {
+      this.hasFocusPoint = false;
+      this.setControlsTarget(focusInfo.point);
+    }
+
     this.dollyToFocus(0.85);
   }
 
   zoomOut() {
+    const focusInfo = this.getZoomFocusInfo();
+    if (focusInfo?.point) {
+      this.hasFocusPoint = false;
+      this.setControlsTarget(focusInfo.point);
+    }
+
     this.dollyToFocus(1.18);
   }
 
   dollyToFocus(scale) {
     if (!this.camera) return;
 
-    const focus = this.getFocusPoint();
+    const focus = this.controls?.target ?? this.getFocusPoint();
     const v = new THREE.Vector3().subVectors(this.camera.position, focus);
     v.multiplyScalar(scale);
 
