@@ -1,25 +1,37 @@
 import * as THREE from "three";
 import { CSS2DRenderer, CSS2DObject } from "three/examples/jsm/renderers/CSS2DRenderer.js";
 
+/**
+ * Manages the interactive skin-selection overlays that sit on top of the shared shell.
+ * It loads lymph node metadata, renders CSS2D labels and spheres, tracks hover state,
+ * and synchronises sidebar table rows with the currently selected shell element.
+ */
 export class SkinSelectionLayer {
+  /**
+   * Creates a new skin-selection layer.
+   *
+   * @param {Object} params Construction parameters.
+   * @param {THREE.Scene} params.scene Scene that the layer should attach to.
+   * @param {THREE.Camera} params.camera Active camera used for raycasting and label rendering.
+   * @param {HTMLElement} params.host Host DOM element for pointer tracking and label overlay mounting.
+   * @param {THREE.Vector3} params.offset Positional offset applied to loaded lymph node positions.
+   * @param {Object} params.anatomyShell Shared anatomy shell layer used for selection state.
+   * @param {(rows: any[]) => void} [params.onRowsChange] Callback fired when selected drainage rows change.
+   */
   constructor({
     scene,
     camera,
-    controls,
     host,
     offset,
     anatomyShell,
     onRowsChange,
-    onFocusChange,
   }) {
     this.scene = scene;
     this.camera = camera;
-    this.controls = controls;
     this.host = host;
     this.offset = offset;
     this.anatomyShell = anatomyShell;
     this.onRowsChange = onRowsChange;
-    this.onFocusChange = onFocusChange;
 
     this.pointer = new THREE.Vector2();
     this.raycaster = new THREE.Raycaster();
@@ -50,7 +62,13 @@ export class SkinSelectionLayer {
     this._onPointerMove = this._onPointerMove.bind(this);
   }
 
+  /**
+   * Initialises the CSS2D label renderer, tooltip, and lymphatic metadata.
+   *
+   * @returns {Promise<void>} Resolves once the layer is ready for use.
+   */
   async init() {
+    // Match the label renderer size to the current host so HTML labels overlay correctly.
     const { width, height } = this._getHostSize();
 
     this.labelRenderer = new CSS2DRenderer();
@@ -60,6 +78,7 @@ export class SkinSelectionLayer {
     this.labelRenderer.domElement.style.pointerEvents = "none";
     this.host.appendChild(this.labelRenderer.domElement);
 
+    // Create a reusable patient-count tooltip that is repositioned per selection.
     this.tooltip = this._addSimpleLabel("0", new THREE.Vector3(0, 0, 0), "tt");
     this.tooltip.visible = false;
 
@@ -69,7 +88,13 @@ export class SkinSelectionLayer {
     this._applyLabels();
   }
 
+  /**
+   * Loads node positions, drainage mappings, and patient-count metadata.
+   *
+   * @returns {Promise<void>} Resolves once all lookup data and visual helpers are prepared.
+   */
   async _loadData() {
+    // Load all selection-related datasets in parallel to minimise startup time.
     const [lymphs, dataElements, patientCounts] = await Promise.all([
       fetch(`${import.meta.env.BASE_URL}data/lymphs_positions.json`).then((r) => r.json()),
       fetch(`${import.meta.env.BASE_URL}data/data_elements.json`).then((r) => r.json()),
@@ -78,8 +103,10 @@ export class SkinSelectionLayer {
 
     this.data_elements = dataElements ?? {};
     this.patient_counts = patientCounts ?? {};
+    // Reuse one sphere geometry for all node markers to reduce memory overhead.
     this._sharedSphereGeometry = new THREE.SphereGeometry(18, 32, 32);
 
+    // Build lookup entries that combine the node position with its sphere and rich label objects.
     for (const l of lymphs) {
       const pos = new THREE.Vector3(
         l.position[0],
@@ -101,10 +128,16 @@ export class SkinSelectionLayer {
     }
   }
 
+  /**
+   * Enables or disables pointer hover handling and overlay visibility.
+   *
+   * @param {boolean} enabled Whether the skin-selection layer should be active.
+   */
   setEnabled(enabled) {
     if (this.enabled === enabled) return;
     this.enabled = enabled;
 
+    // Only track hover interactions while the skin-selection workflow is active.
     if (enabled) {
       this.host.addEventListener("pointermove", this._onPointerMove);
       this._lastSelectionMesh = null;
@@ -121,28 +154,23 @@ export class SkinSelectionLayer {
     this._applyLabels();
   }
 
+  /**
+   * Updates which node labels and counts should be visible.
+   *
+   * @param {Object} flags Visibility flags for node codes, drainage percentages, and patient counts.
+   */
   setShowFlags(flags) {
     this.showFlags = { ...this.showFlags, ...flags };
     this._applyLabels();
   }
 
-  hasSelection() {
-    return this.anatomyShell?.hasSelection?.() ?? false;
-  }
-
-  getSelectedFocusInfo() {
-    return this.anatomyShell?.getSelectedFocusInfo?.() ?? null;
-  }
-
-  getPresetFocusInfo() {
-    const selected = this.getSelectedFocusInfo();
-    if (selected) return selected;
-    return null;
-  }
-
+  /**
+   * Runs per-frame selection and hover updates before the shared viewer renders.
+   */
   beforeRender() {
     if (!this.enabled) return;
 
+    // Sync labels and sidebar rows whenever the shared shell selection changes.
     const selectedMesh = this.anatomyShell?.getSelectedMesh?.() ?? null;
     if (selectedMesh !== this._lastSelectionMesh) {
       this._syncFromSharedSelection();
@@ -154,23 +182,33 @@ export class SkinSelectionLayer {
     }
   }
 
+  /**
+   * Renders the CSS2D label scene on top of the WebGL viewer.
+   */
   renderLabels() {
     if (!this.labelRenderer || !this.scene || !this.camera) return;
     this.labelRenderer.render(this.scene, this.camera);
   }
 
+  /**
+   * Resizes the CSS2D renderer to match the current host element dimensions.
+   */
   resize() {
     if (!this.labelRenderer) return;
     const { width, height } = this._getHostSize();
     this.labelRenderer.setSize(width, height);
   }
 
+  /**
+   * Clears hover state, selection-linked overlays, and sidebar rows.
+   */
   reset() {
     if (this.INTERSECTED?.material?.emissive) {
       this.INTERSECTED.material.emissive.setHex(0x000000);
     }
     this.INTERSECTED = null;
 
+    // Hide all node markers and labels until a new shell element is selected.
     for (const obj of Object.values(this.lymph_lookup)) {
       obj.sphere.visible = false;
       obj.label.visible = false;
@@ -184,11 +222,13 @@ export class SkinSelectionLayer {
     this.onRowsChange?.([]);
 
     this.anatomyShell?.clearSelection?.();
-    this.onFocusChange?.(null);
     this._lastSelectionMesh = null;
     this._applyLabels();
   }
 
+  /**
+   * Disposes DOM-backed label resources and clears cached selection state.
+   */
   dispose() {
     this.setEnabled(false);
 
@@ -204,6 +244,12 @@ export class SkinSelectionLayer {
     this.INTERSECTED = null;
   }
 
+  /**
+   * Creates a hidden marker sphere for a lymph node position.
+   *
+   * @param {THREE.Vector3} pos World-space position for the marker.
+   * @returns {THREE.Mesh} The created marker mesh.
+   */
   _makeSphere(pos) {
     const mat = new THREE.MeshPhongMaterial({
       color: 0x00ff00,
@@ -219,6 +265,13 @@ export class SkinSelectionLayer {
     return sphere;
   }
 
+  /**
+   * Creates a two-part CSS2D label containing a node code and drainage percentage.
+   *
+   * @param {string} code Initial node code text.
+   * @param {THREE.Vector3} pos Base world-space position for the label.
+   * @returns {{ obj: CSS2DObject, div: HTMLDivElement, codeSpan: HTMLSpanElement, pctSpan: HTMLSpanElement }} Label parts.
+   */
   _makeRichLabel(code, pos) {
     const div = document.createElement("div");
     div.className = "label lymph";
@@ -242,6 +295,14 @@ export class SkinSelectionLayer {
     return { obj, div, codeSpan, pctSpan };
   }
 
+  /**
+   * Creates a simple single-text CSS2D label.
+   *
+   * @param {string} text Label text.
+   * @param {THREE.Vector3} position World-space label position.
+   * @param {string} [additionalClass=""] Optional CSS class suffix.
+   * @returns {CSS2DObject} The created label object.
+   */
   _addSimpleLabel(text, position, additionalClass = "") {
     const div = document.createElement("div");
     div.className = `label ${additionalClass}`.trim();
@@ -253,16 +314,20 @@ export class SkinSelectionLayer {
     return label;
   }
 
+  /**
+   * Applies the current visibility flags to the tooltip, node labels, and marker spheres.
+   */
   _applyLabels() {
     const { showNodecodes, showDrainage, showPatientCounts } = this.showFlags;
 
     if (this.tooltip) {
       this.tooltip.visible =
         this.enabled &&
-        this.hasSelection() &&
+        Boolean(this.anatomyShell?.getSelectedMesh?.()) &&
         Boolean(showPatientCounts);
     }
 
+    // Only update visual state for node entries tied to the current selection rows.
     for (const r of this.rows) {
       const item = this.lymph_lookup[r.code];
       if (!item) continue;
@@ -278,6 +343,9 @@ export class SkinSelectionLayer {
     }
   }
 
+  /**
+   * Rebuilds rows, tooltip content, and visible node overlays from the shared shell selection.
+   */
   _syncFromSharedSelection() {
     const selectedMesh = this.anatomyShell?.getSelectedMesh?.() ?? null;
     this._lastSelectionMesh = selectedMesh;
@@ -301,6 +369,7 @@ export class SkinSelectionLayer {
 
     const centre = this.anatomyShell?.getCenterPoint?.(selectedMesh);
     const name = selectedMesh?.name;
+    // Support both underscored and space-separated element names when reading lookup data.
     const rows =
       this.data_elements?.[name] ||
       this.data_elements?.[name?.replace?.(/_/g, " ")] ||
@@ -318,6 +387,7 @@ export class SkinSelectionLayer {
       this.tooltip.position.copy(centre);
     }
 
+    // Show and scale each draining node marker according to its associated drainage percentage.
     for (const r of rows) {
       const item = this.lymph_lookup[r.code];
       if (!item) continue;
@@ -337,6 +407,11 @@ export class SkinSelectionLayer {
     this._applyLabels();
   }
 
+  /**
+   * Tracks pointer movement and marks hover picking for the next render frame.
+   *
+   * @param {PointerEvent} e Pointer move event.
+   */
   _onPointerMove(e) {
     if (!this.enabled) return;
 
@@ -357,24 +432,9 @@ export class SkinSelectionLayer {
     }
   }
 
-  _setControlsTarget(point) {
-    if (!this.controls || !point) return;
-
-    if (this.controls.target?.copy) {
-      this.controls.target.copy(point);
-    }
-
-    if (typeof this.controls.setTarget === "function") {
-      this.controls.setTarget(point.x, point.y, point.z);
-    }
-
-    if (typeof this.controls.setCenter === "function") {
-      this.controls.setCenter(point);
-    }
-
-    this.controls.update?.();
-  }
-
+  /**
+   * Performs hover raycasting and applies transient emissive highlighting.
+   */
   _updateHover() {
     if (!this.enabled) return;
 
@@ -391,6 +451,7 @@ export class SkinSelectionLayer {
 
         this.INTERSECTED = obj;
 
+        // Never apply hover highlighting to the mesh that is already selected.
         const selectedMesh = this.anatomyShell?.getSelectedMesh?.();
         if (this.INTERSECTED !== selectedMesh && this.INTERSECTED?.material?.emissive) {
           this.INTERSECTED.material.emissive.setHex(0xff0000);
@@ -404,25 +465,11 @@ export class SkinSelectionLayer {
     }
   }
 
-  _updatePointerFromEvent(e) {
-    const rect = this.host.getBoundingClientRect();
-    const x = (e.clientX - rect.left) / rect.width;
-    const y = (e.clientY - rect.top) / rect.height;
-
-    this.pointer.x = x * 2 - 1;
-    this.pointer.y = -(y * 2 - 1);
-  }
-
-  _isClientPointInsideHost(clientX, clientY) {
-    const rect = this.host.getBoundingClientRect();
-    return (
-      clientX >= rect.left &&
-      clientX <= rect.right &&
-      clientY >= rect.top &&
-      clientY <= rect.bottom
-    );
-  }
-
+  /**
+   * Measures the host element and returns a non-zero overlay size.
+   *
+   * @returns {{ width: number, height: number }} Current host dimensions.
+   */
   _getHostSize() {
     const r = this.host.getBoundingClientRect();
     return {

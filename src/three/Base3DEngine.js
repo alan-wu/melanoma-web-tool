@@ -1,13 +1,27 @@
 import * as THREE from "three";
 import { ArcballControls } from "three/examples/jsm/controls/ArcballControls.js";
 
+/**
+ * Default world-space camera position used when the viewer is first initialised.
+ */
 const DEFAULT_CAMERA_POSITION = [
   1496.96865501004,
   3213.1316867226697,
   -232.08816356744805,
 ];
 
+/**
+ * Shared Three.js engine foundation for the interactive anatomy tools.
+ * It sets up the scene, camera, renderer, controls, resize handling,
+ * and common camera framing and zoom behaviour used by higher-level viewer engines.
+ */
 export class Base3DEngine {
+  /**
+   * Creates a new base 3D engine bound to a host DOM element.
+   *
+   * @param {Object} params Construction parameters.
+   * @param {HTMLElement} params.host DOM element that will contain the renderer canvas.
+   */
   constructor({ host }) {
     this.host = host;
 
@@ -30,9 +44,14 @@ export class Base3DEngine {
     ).normalize();
   }
 
+  /**
+   * Initialises the common Three.js scene, camera, lighting, renderer,
+   * controls, and resize observation shared by all tool engines.
+   */
   initCore() {
     this.scene = new THREE.Scene();
 
+    // Measure the host so the initial camera aspect ratio and renderer size are correct.
     const { width, height } = this.getHostSize();
 
     this.camera = new THREE.PerspectiveCamera(35, width / height, 1, 10000);
@@ -56,6 +75,7 @@ export class Base3DEngine {
     this.renderer.domElement.style.display = "block";
     this.host.appendChild(this.renderer.domElement);
 
+    // Arcball controls provide rotate, pan, and zoom interactions around a target point.
     this.controls = new ArcballControls(
       this.camera,
       this.renderer.domElement,
@@ -65,126 +85,170 @@ export class Base3DEngine {
 
     this.host.style.touchAction = "none";
 
+    // Keep the renderer and camera projection synced to the host container size.
     this._resizeObserver = new ResizeObserver(() => this.resizeToHost());
     this._resizeObserver.observe(this.host);
   }
 
-  _frameDistanceForRadius(radius, padding = 1.4, min = 220, max = 8000) {
-    const safeRadius = Math.max(radius || 1, 1);
-    const fovRad = THREE.MathUtils.degToRad(this.camera.fov);
-    const dist = (safeRadius / Math.tan(fovRad / 2)) * padding;
-    return THREE.MathUtils.clamp(dist, min, max);
-  }
-
+  /**
+   * Returns framing information for the whole model.
+   * Subclasses can override this to supply a more precise global target.
+   *
+   * @returns {{ point: THREE.Vector3, distance: number }} Global frame target information.
+   */
   getGlobalFrameInfo() {
     return {
       point: new THREE.Vector3(0, 0, 0),
-      radius: null,
+      distance: this.camera ? this.camera.position.length() : 3500,
     };
   }
 
+  /**
+   * Returns the focus target used when applying named camera presets.
+   * Subclasses can override this to frame a selected structure instead of the full model.
+   *
+   * @returns {{ point: THREE.Vector3, distance?: number }} Preset focus information.
+   */
   getPresetFocusInfo() {
-    return {
-      point: this.getFocusPoint().clone(),
-      radius: null,
-    };
+    return this.getGlobalFrameInfo();
   }
 
+  /**
+   * Returns the focus target used for zoom actions.
+   * Subclasses can override this to zoom toward a selected structure.
+   *
+   * @returns {{ point: THREE.Vector3 }} Zoom focus information.
+   */
   getZoomFocusInfo() {
+    if (this.controls?.target) {
+      return {
+        point: this.controls.target.clone(),
+      };
+    }
+
     return {
-      point: this.getFocusPoint().clone(),
-      radius: null,
+      point: new THREE.Vector3(0, 0, 0),
     };
   }
 
+  /**
+   * Applies one of the preset camera orientations.
+   *
+   * Behaviour:
+   * - "All" always returns to a global whole-body style view.
+   * - The other preset views (Anterior, Posterior, Left lateral, Right lateral)
+   *   should preserve the current zoom distance.
+   * - If a selected element exists, the preset pivots around that element.
+   * - Otherwise, it falls back to the global model centre.
+   *
+   * The preset remembers:
+   * the current zoom amount
+   * the currently selected element (if there is one)
+   */
   setViewPreset(preset) {
     if (!this.controls || !this.camera) return;
 
-    // All should use the global model framing, not selection framing
+    // "All" should remain a global full-body reset-style view.
     if (preset === "All") {
       const globalInfo = this.getGlobalFrameInfo();
-
       const pivot = globalInfo.point.clone();
-      const distance = globalInfo.radius
-        ? this._frameDistanceForRadius(globalInfo.radius, 1.25, 700, 8000)
-        : 3500;
+      const currentDistance = globalInfo.distance ?? this.camera.position.length();
 
-      this.camera.position.copy(pivot).addScaledVector(this.defaultViewDirection, distance);
+      this.controls.reset();
+      this.camera.position
+        .copy(this.defaultViewDirection)
+        .multiplyScalar(currentDistance);
+
       this.camera.up.set(0, 0, 1);
-
       this.hasFocusPoint = false;
       this.focusPoint.set(0, 0, 0);
-
       this.setControlsTarget(pivot);
       this.controls.update();
       return;
     }
 
-    const focus = this.getPresetFocusInfo();
+    // For the directional presets, use selected-element focus if available.
+    const focusInfo = this.getPresetFocusInfo();
+    const pivot = focusInfo.point.clone();
+    const currentDistance =
+      focusInfo.distance ?? this.camera.position.distanceTo(pivot);
 
-    const pivot = focus.point.clone();
+    // Reset controls first so the preset starts from a clean orbit state,
+    // while still preserving the desired distance and pivot.
+    this.controls.reset();
 
-    let dir = null;
-    if (preset === "Anterior") dir = new THREE.Vector3(0, 1, 0);
-    else if (preset === "Posterior") dir = new THREE.Vector3(0, -1, 0);
-    else if (preset === "Left lateral") dir = new THREE.Vector3(-1, 0, 0);
-    else if (preset === "Right lateral") dir = new THREE.Vector3(1, 0, 0);
-    else return;
-
-    let distance;
-    if (focus.radius && Number.isFinite(focus.radius)) {
-      // Use local selected object framing if available,
-      // otherwise global model framing info should be supplied by caller
-      const padding = focus.radius < 150 ? 2.0 : 1.3;
-      distance = this._frameDistanceForRadius(focus.radius, padding, 220, 8000);
+    if (preset === "Anterior") {
+      this.camera.position.set(pivot.x, pivot.y + currentDistance, pivot.z);
+    } else if (preset === "Posterior") {
+      this.camera.position.set(pivot.x, pivot.y - currentDistance, pivot.z);
+    } else if (preset === "Left lateral") {
+      this.camera.position.set(pivot.x - currentDistance, pivot.y, pivot.z);
+    } else if (preset === "Right lateral") {
+      this.camera.position.set(pivot.x + currentDistance, pivot.y, pivot.z);
     } else {
-      distance = Math.max(this.camera.position.distanceTo(pivot), 220);
+      return;
     }
 
-    this.camera.position.copy(pivot).addScaledVector(dir, distance);
     this.camera.up.set(0, 0, 1);
     this.setControlsTarget(pivot);
     this.controls.update();
   }
-
+  /**
+   * Zooms the camera in toward the current zoom focus target.
+   */
   zoomIn() {
     const focusInfo = this.getZoomFocusInfo();
     if (focusInfo?.point) {
-      this.hasFocusPoint = false;
       this.setControlsTarget(focusInfo.point);
     }
 
     this.dollyToFocus(0.85);
   }
 
+  /**
+   * Zooms the camera out away from the current zoom focus target.
+   */
   zoomOut() {
     const focusInfo = this.getZoomFocusInfo();
     if (focusInfo?.point) {
-      this.hasFocusPoint = false;
       this.setControlsTarget(focusInfo.point);
     }
 
     this.dollyToFocus(1.18);
   }
 
+  /**
+   * Moves the camera toward or away from the current focus target by scaling the camera offset vector.
+   *
+   * @param {number} scale Scale factor applied to the camera-to-focus offset.
+   */
   dollyToFocus(scale) {
     if (!this.camera) return;
 
-    const focus = this.controls?.target ?? this.getFocusPoint();
+    const focus = this.getZoomFocusInfo().point;
     const v = new THREE.Vector3().subVectors(this.camera.position, focus);
     v.multiplyScalar(scale);
 
     this.camera.position.copy(focus).add(v);
-    this.setControlsTarget(focus);
     this.controls?.update();
   }
 
+  /**
+   * Returns the current focus point used for framing and control targeting.
+   *
+   * @returns {THREE.Vector3} Current focus point.
+   */
   getFocusPoint() {
     if (this.hasFocusPoint) return this.focusPoint;
     if (this.controls?.target) return this.controls.target;
     return this.focusPoint;
   }
 
+  /**
+   * Updates the Arcball control target using whichever target APIs are available.
+   *
+   * @param {THREE.Vector3} point New target point.
+   */
   setControlsTarget(point) {
     if (!this.controls) return;
 
@@ -201,9 +265,13 @@ export class Base3DEngine {
     }
   }
 
+  /**
+   * Starts or continues the render loop, invoking optional pre/post render hooks.
+   */
   animate() {
     this._raf = requestAnimationFrame(() => this.animate());
 
+    // Allow subclasses to update scene state immediately before rendering each frame.
     if (typeof this.beforeRender === "function") {
       this.beforeRender();
     }
@@ -212,11 +280,15 @@ export class Base3DEngine {
       this.renderer.render(this.scene, this.camera);
     }
 
+    // Allow subclasses to react after the frame has been rendered.
     if (typeof this.afterRender === "function") {
       this.afterRender();
     }
   }
 
+  /**
+   * Resizes the renderer and camera projection to match the current host element size.
+   */
   resizeToHost() {
     const { width, height } = this.getHostSize();
     if (!this.camera || !this.renderer) return;
@@ -226,6 +298,11 @@ export class Base3DEngine {
     this.renderer.setSize(width, height);
   }
 
+  /**
+   * Measures the host element and returns a non-zero render size.
+   *
+   * @returns {{ width: number, height: number }} Current host dimensions.
+   */
   getHostSize() {
     const r = this.host.getBoundingClientRect();
     return {
@@ -234,6 +311,9 @@ export class Base3DEngine {
     };
   }
 
+  /**
+   * Cleans up renderer resources, observers, controls, and scene-owned geometry/materials.
+   */
   dispose() {
     this._disposed = true;
 

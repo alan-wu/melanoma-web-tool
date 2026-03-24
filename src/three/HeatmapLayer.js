@@ -1,7 +1,19 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 
+/**
+ * Manages the coloured heatmap mesh and optional discrete point overlays.
+ * It loads per-region vertex colours, the human mesh, and the discrete
+ * marker data used for melanoma sites and normalised point displays.
+ */
 export class HeatmapLayer {
+  /**
+   * Creates a new heatmap layer.
+   *
+   * @param {Object} params Construction parameters.
+   * @param {THREE.Scene} params.scene Scene that the layer should attach to.
+   * @param {THREE.Vector3} params.offset Positional offset applied to the loaded model root.
+   */
   constructor({ scene, offset }) {
     this.scene = scene;
     this.offset = offset;
@@ -22,6 +34,11 @@ export class HeatmapLayer {
     this._discreteInstanced = null;
   }
 
+  /**
+   * Loads all heatmap resources and prepares the mesh plus overlay container.
+   *
+   * @returns {Promise<void>} Resolves once the layer is fully initialised.
+   */
   async init() {
     await this._loadHeatmapColours();
     await this._loadDiscretePoints();
@@ -32,7 +49,13 @@ export class HeatmapLayer {
     this._applyDiscretePoints();
   }
 
+  /**
+   * Returns metadata describing the available heatmap regions and defaults.
+   *
+   * @returns {{ regions: string[], patientDataKeys: string[], defaultRegion: string }} Heatmap metadata.
+   */
   getMeta() {
+    // Sort region names so the UI receives a stable, alphabetical list.
     const regions = Object.keys(this.heatmapAttrs).sort((a, b) =>
       a.localeCompare(b)
     );
@@ -48,6 +71,11 @@ export class HeatmapLayer {
     return { regions, patientDataKeys, defaultRegion };
   }
 
+  /**
+   * Enables or disables the heatmap layer and its discrete overlays.
+   *
+   * @param {boolean} enabled Whether the heatmap visuals should be visible.
+   */
   setEnabled(enabled) {
     this.enabled = enabled;
 
@@ -55,21 +83,43 @@ export class HeatmapLayer {
       this.heatmapRoot.visible = enabled;
     }
 
+    if (!enabled) {
+      this._clearDiscreteOverlay(true);
+      return;
+    }
+
     this._applyDiscretePoints();
   }
 
+  /**
+   * Updates the active region and overlay display mode.
+   *
+   * @param {Object} next Partial selection update.
+   */
   setSelection(next) {
     this.selection = { ...this.selection, ...next };
     this._applyHeatmap();
-    this._applyDiscretePoints();
+
+    if (this.enabled) {
+      this._applyDiscretePoints();
+    }
   }
 
+  /**
+   * Clears and reapplies the current heatmap and discrete overlay state.
+   */
   reset() {
     this._clearDiscreteOverlay(true);
     this._applyHeatmap();
-    this._applyDiscretePoints();
+
+    if (this.enabled) {
+      this._applyDiscretePoints();
+    }
   }
 
+  /**
+   * Removes the heatmap layer from the scene and disposes overlay resources.
+   */
   dispose() {
     this._clearDiscreteOverlay(true);
 
@@ -84,11 +134,18 @@ export class HeatmapLayer {
     this.discretePoints = null;
   }
 
+  /**
+   * Loads the precomputed per-vertex colour attributes for each heatmap region.
+   *
+   * @returns {Promise<void>} Resolves once all colour attributes are prepared.
+   */
   async _loadHeatmapColours() {
+    // Read the exported vertex-colour map keyed by region name.
     const raw = await fetch(
       `${import.meta.env.BASE_URL}data/heat_maps_verts_colors.json`
     ).then((r) => r.json());
 
+    // Convert packed integer colours into normalised RGB triples for Three.js attributes.
     const parseColor = (c) => {
       const r = (c >> 16) & 255;
       const g = (c >> 8) & 255;
@@ -98,6 +155,7 @@ export class HeatmapLayer {
 
     this.heatmapAttrs = {};
 
+    // Build a reusable Float32BufferAttribute for every named region.
     for (const [key, arr] of Object.entries(raw)) {
       const colors = new Float32Array(arr.length * 3);
 
@@ -113,13 +171,24 @@ export class HeatmapLayer {
     }
   }
 
+  /**
+   * Loads the discrete point dataset used for normalised markers and melanoma sites.
+   *
+   * @returns {Promise<void>} Resolves once the point data has been loaded.
+   */
   async _loadDiscretePoints() {
     this.discretePoints = await fetch(
       `${import.meta.env.BASE_URL}data/discrete_points_normalized.json`
     ).then((r) => r.json());
   }
 
+  /**
+   * Loads the base human mesh used to display the vertex-colour heatmaps.
+   *
+   * @returns {Promise<void>} Resolves once the mesh and overlay group are attached.
+   */
   async _loadHeatmapMesh() {
+    // Load the shared anatomical mesh that receives the per-vertex heatmap colours.
     const loader = new GLTFLoader();
 
     const gltf = await new Promise((resolve, reject) => {
@@ -131,6 +200,7 @@ export class HeatmapLayer {
       );
     });
 
+    // Find the first mesh in the GLB scene and use it as the heatmap surface.
     let foundMesh = null;
     gltf.scene.traverse((obj) => {
       if (!foundMesh && obj.isMesh) {
@@ -144,6 +214,7 @@ export class HeatmapLayer {
 
     foundMesh.geometry.computeVertexNormals();
 
+    // Use a vertex-colour material so each selected region can swap in its own colour attribute.
     foundMesh.material = new THREE.MeshPhongMaterial({
       color: "#FFFFFF",
       specular: "#33334C",
@@ -160,10 +231,14 @@ export class HeatmapLayer {
 
     this.scene.add(this.heatmapRoot);
 
+    // Keep discrete markers in a dedicated child group so they can be rebuilt independently.
     this.discreteGroup = new THREE.Group();
     this.heatmapRoot.add(this.discreteGroup);
   }
 
+  /**
+   * Applies the currently selected region's vertex colours to the heatmap mesh.
+   */
   _applyHeatmap() {
     if (!this.mesh?.geometry) return;
 
@@ -179,15 +254,20 @@ export class HeatmapLayer {
     }
   }
 
+  /**
+   * Rebuilds the discrete point overlay for the active region and display mode.
+   */
   _applyDiscretePoints() {
     if (!this.discretePoints || !this.discreteGroup) return;
 
+    // Recreate the overlay from scratch so it always matches the latest selection.
     this._clearDiscreteOverlay(true);
 
     if (!this.enabled) return;
     if (this.selection.pointDisplayMode === "none") return;
 
     let key;
+    // Melanoma site markers use a different data key naming convention than normalised points.
     if (this.selection.pointDisplayMode === "sites") {
       key = `${this.selection.region} Frequency`;
     } else {
@@ -199,6 +279,7 @@ export class HeatmapLayer {
 
     const count = data.positions.length;
 
+    // Use a shared sphere geometry and render all markers efficiently with instancing.
     const geom = new THREE.SphereGeometry(10, 16, 16);
 
     const vCount = geom.getAttribute("position").count;
@@ -221,6 +302,7 @@ export class HeatmapLayer {
     );
     instanced.geometry.setAttribute("instanceColor", instanced.instanceColor);
 
+    // Reuse transform helpers while composing per-instance transforms and colours.
     const m = new THREE.Matrix4();
     const p = new THREE.Vector3();
     const q = new THREE.Quaternion();
@@ -235,6 +317,7 @@ export class HeatmapLayer {
       m.compose(p, q, s);
       instanced.setMatrixAt(i, m);
 
+      // Site markers are rendered as solid black points, while normalised markers use dataset colours.
       let c;
       if (this.selection.pointDisplayMode === "sites") {
         c = new THREE.Color(0, 0, 0);
@@ -261,6 +344,11 @@ export class HeatmapLayer {
     this.discreteGroup.add(instanced);
   }
 
+  /**
+   * Removes the current discrete overlay mesh and optionally disposes its resources.
+   *
+   * @param {boolean} [dispose=false] Whether geometry and material should also be disposed.
+   */
   _clearDiscreteOverlay(dispose = false) {
     if (!this._discreteInstanced) return;
 
