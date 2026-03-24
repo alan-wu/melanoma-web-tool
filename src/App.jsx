@@ -21,7 +21,7 @@ import Team from "./pages/Team.jsx";
 export default function App() {
   return (
     <Box sx={{ minHeight: "100dvh", display: "flex", flexDirection: "column" }}>
-      <Navbar brand="Melanoma Lymphatic Pathways" />
+      <Navbar title="Melanoma Lymphatic Pathways" />
 
       {/* Main content area that swaps pages based on the current route. */}
       <Box component="main" sx={{ flex: 1, minHeight: 0, width: "100%" }}>
