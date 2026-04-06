@@ -31,6 +31,12 @@ export class SharedBodyEngine extends Base3DEngine {
     this.onSkinRowsChange = onSkinRowsChange;
     this.onHeatmapMetaReady = onHeatmapMetaReady;
 
+    /**
+     * Default element name to select on initial load for Tool 1 when no prior selection exists.
+     * If not found, the engine falls back to the first selectable shell mesh.
+     */
+    this.defaultSkinElementName = "element_547"; 
+
     this.anatomyShell = null;
     this.skinLayer = null;
     this.heatmapLayer = null;
@@ -83,6 +89,7 @@ export class SharedBodyEngine extends Base3DEngine {
 
     if (this.activeTool === "skin") {
       await this._ensureSkinLayer();
+      this._applyDefaultSkinSelection();
       this.setActiveTool("skin");
 
       this._ensureHeatmapLayer().catch((err) => {
@@ -114,21 +121,10 @@ export class SharedBodyEngine extends Base3DEngine {
       this.skinLayer = new SkinSelectionLayer({
         scene: this.scene,
         camera: this.camera,
-        controls: this.controls,
         host: this.host,
         offset: this.offset,
         anatomyShell: this.anatomyShell,
         onRowsChange: this.onSkinRowsChange,
-        onFocusChange: (point) => {
-          if (point) {
-            // Keep the shared camera focus target aligned with skin-layer selection changes.
-            this.hasFocusPoint = true;
-            this.focusPoint.copy(point);
-          } else {
-            this.hasFocusPoint = false;
-            this.focusPoint.set(0, 0, 0);
-          }
-        },
       });
 
       await this.skinLayer.init();
@@ -174,6 +170,35 @@ export class SharedBodyEngine extends Base3DEngine {
     })();
 
     return this._heatmapInitPromise;
+  }
+
+  /**
+   * Applies a default shell selection for Tool 1 on the first time load.
+   *
+   * If a shell selection already exists, it is preserved.
+   * If defaultSkinElementName is set and a matching mesh exists, that mesh is selected.
+   * Otherwise the first selectable shell mesh is used as a safe fallback.
+   */
+  _applyDefaultSkinSelection() {
+    if (!this.anatomyShell?.selectable?.length) return;
+    if (this.anatomyShell?.hasSelection?.()) return;
+
+    const defaultMesh = this.defaultSkinElementName
+      ? this.anatomyShell.selectable.find(
+          (mesh) => mesh.name === this.defaultSkinElementName
+        )
+      : null;
+
+    const meshToSelect = defaultMesh ?? this.anatomyShell.selectable[0] ?? null;
+    if (!meshToSelect) return;
+
+    this.anatomyShell.selectMesh(meshToSelect);
+
+    const info = this.anatomyShell.getSelectedFocusInfo?.();
+    if (info?.point) {
+      this.hasFocusPoint = true;
+      this.focusPoint.copy(info.point);
+    }
   }
 
   /**
@@ -344,28 +369,11 @@ export class SharedBodyEngine extends Base3DEngine {
     this.activeTool = tool;
     this.anatomyShell?.setMode(tool);
 
-    // Preserve the currently selected element as the orbit target when switching
-    // tools so the model position stays visually consistent between Tool 1 and Tool 2.
-    // If nothing is selected, fall back to the global model centre.
-    const selected = this.anatomyShell?.getSelectedFocusInfo?.();
-
-    if (selected?.point) {
-      this.hasFocusPoint = true;
-      this.focusPoint.copy(selected.point);
-      this.setControlsTarget(selected.point);
-    } else {
-      const global = this.getGlobalFrameInfo();
-      this.hasFocusPoint = false;
-      this.focusPoint.set(0, 0, 0);
-      this.setControlsTarget(global.point);
-    }
-
-    this.controls?.update();
-
     // Skin mode shows shell selection and table-driven drainage details.
     if (tool === "skin") {
       this.skinLayer?.setEnabled(true);
       this.heatmapLayer?.setEnabled(false);
+      this._applyDefaultSkinSelection();
 
       if (!this._skinInitialised) {
         this._ensureSkinLayer()
@@ -374,6 +382,7 @@ export class SharedBodyEngine extends Base3DEngine {
               this.anatomyShell?.setMode("skin");
               this.skinLayer?.setEnabled(true);
               this.heatmapLayer?.setEnabled(false);
+              this._applyDefaultSkinSelection();
             }
           })
           .catch((err) => console.error("Skin layer init failed:", err));
