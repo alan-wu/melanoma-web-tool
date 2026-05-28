@@ -7568,9 +7568,9 @@
         {
             "code": "in",
             "name": "Internal Node",
-            "count": "51",
-            "percentage": "8.79",
-            "CI": "[6.55, 11.21]"
+            "count": "52",
+            "percentage": "8.97",
+            "CI": "[6.72, 11.38]"
         },
         {
             "code": "lsc",
@@ -7599,13 +7599,6 @@
             "count": "24",
             "percentage": "4.14",
             "CI": "[2.59, 5.86]"
-        },
-        {
-            "code": "ro",
-            "name": "Right Occipital",
-            "count": "1",
-            "percentage": "0.17",
-            "CI": "[0.00, 0.52]"
         },
         {
             "code": "lc4",
