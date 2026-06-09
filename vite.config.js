@@ -4,6 +4,7 @@ import react from '@vitejs/plugin-react'
 // https://vite.dev/config/
 
 export default defineConfig({
-  base: '/Melanoma-web-tool/',
+  base: '/melanoma-web-tool/',
+  plugins: [react()]
 });
 
